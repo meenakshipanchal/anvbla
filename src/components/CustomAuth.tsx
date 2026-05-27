@@ -67,8 +67,28 @@ export default function CustomAuth() {
       return;
     }
     try {
-      await signInWithPopup(firebaseAuth, googleProvider);
-      // Navigation handled by the effect above when `user` updates.
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
+      // EXPLICITLY create the server session cookie before navigating. The
+      // FirebaseProvider's onIdTokenChanged also does this in the background,
+      // but if we redirect first the proxy won't see the cookie yet and will
+      // bounce us right back here — classic Vercel/Next race.
+      const idToken = await result.user.getIdToken();
+      const res = await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(
+          data.error ||
+            "Signed in with Google, but the server couldn’t create a session. " +
+              "Usually means FIREBASE_PRIVATE_KEY is missing or malformed on the server."
+        );
+        return;
+      }
+      // Cookie is now set — navigation will succeed past the proxy check.
+      router.replace(next || "/trips");
     } catch (err) {
       const code = (err as { code?: string }).code;
       // Popup blocked / unsupported → fall back to a full-page redirect sign-in.
