@@ -1,26 +1,245 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   BlaBlue — carpooling PWA (BlaBlaCar-inspired, original build)
+   Palette inspired by BlaBlaCar's 2024 identity.
+   ============================================================ */
+@theme {
+  --color-blue: #0071eb;
+  --color-blue-dark: #005bc4;
+  --color-sky: #2dbeff;
+  --color-sky-soft: #e7f6ff;
+  --color-green: #9ef769;
+  --color-sherpa: #054752;
+  --color-sherpa-2: #0a5d6b;
+
+  --color-ink: #0c1f24;
+  --color-muted: #5a6b70;
+  --color-line: #e4e9eb;
+  --color-bgsoft: #f4f7f8;
+  --color-bgtint: #eef9ff;
+  --color-star: #ffb400;
+
+  --font-sans: var(--font-poppins), "Segoe UI", system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px rgba(5, 71, 82, 0.06), 0 2px 8px rgba(5, 71, 82, 0.06);
+  --shadow-md: 0 10px 30px rgba(5, 71, 82, 0.12);
+  --shadow-lg: 0 24px 60px rgba(5, 71, 82, 0.18);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  font-size: 15px; /* slightly smaller, denser UI scale */
+}
+body {
+  background: #fff;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ---------- Reusable component classes ---------- */
+@layer components {
+  .wrap {
+    width: 100%;
+    max-width: 1180px;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border-radius: 999px;
+    padding: 0.75rem 1.4rem;
+    transition: transform 0.08s ease, background 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn-primary {
+    background: var(--color-blue);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--color-blue-dark);
+  }
+  .btn-green {
+    background: var(--color-green);
+    color: var(--color-sherpa);
+  }
+  .btn-green:hover {
+    filter: brightness(0.96);
+  }
+  .btn-dark {
+    background: var(--color-sherpa);
+    color: #fff;
+  }
+  .btn-dark:hover {
+    background: var(--color-sherpa-2);
+  }
+  .btn-outline {
+    border: 1.5px solid var(--color-line);
+    color: var(--color-ink);
+    background: #fff;
+  }
+  .btn-outline:hover {
+    border-color: var(--color-sky);
+    color: var(--color-blue);
+  }
+  .btn-lg {
+    padding: 0.95rem 1.9rem;
+    font-size: 1rem;
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-blue);
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    box-shadow: var(--shadow-card);
+  }
+  .field-input {
+    border: none;
+    outline: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-ink);
+    width: 100%;
+    background: transparent;
+  }
+  .field-input::placeholder {
+    color: #9aa7ab;
+    font-weight: 500;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* FAQ accordion + autocomplete transitions */
+.faq-a {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.faq-item.open .faq-a {
+  max-height: 280px;
+}
+.faq-item.open .chev {
+  transform: rotate(180deg);
+}
+.chev {
+  transition: transform 0.2s ease;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.75rem;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--color-sherpa);
+  color: #fff;
+  padding: 0.85rem 1.4rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s ease;
+  z-index: 100;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+@media (max-width: 767px) {
+  .toast {
+    bottom: 5.5rem; /* clear the mobile bottom nav */
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Uniform typography — ONE font size across the entire UI.
+   Every element renders at the same size; visual hierarchy comes
+   from font-weight and colour only (no size variation anywhere).
+   ────────────────────────────────────────────────────────────── */
+* {
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
+/* Headings keep a clear, larger hierarchy (descendants targeted too, so
+   inline spans inside a heading don't fall back to the 12px body size). */
+h1, h1 * {
+  font-size: 20px !important;
+  line-height: 1.2 !important;
+}
+h2, h2 * {
+  font-size: 16px !important;
+  line-height: 1.25 !important;
+}
+h3, h3 * {
+  font-size: 14px !important;
+  line-height: 1.3 !important;
+}
+
+/* Bottom-nav labels: a touch smaller than body text for a cleaner look. */
+.nav-label {
+  font-size: 10px !important;
+  letter-spacing: 0.02em;
+  line-height: 1 !important;
+}
+
+/* ── Leaflet compatibility ──────────────────────────────────────────────
+   Our global `* { font-size; line-height }` rule and Tailwind's image
+   reset break Leaflet's tile sizing + marker positioning. Restore the
+   defaults Leaflet's own CSS expects, scoped to its containers only. */
+.leaflet-container img,
+.leaflet-container .leaflet-tile,
+.leaflet-container .leaflet-marker-icon,
+.leaflet-container .leaflet-image-layer {
+  max-width: none !important;
+  max-height: none !important;
+  width: auto;
+  height: auto;
+}
+.leaflet-container,
+.leaflet-container * {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  box-sizing: border-box;
+}
+.leaflet-tile {
+  /* tiles are 256×256 by default; tile-container scales them, don't override */
+  width: 256px;
+  height: 256px;
+}
+
+/* Chat "is typing" indicator — three dots bouncing like iMessage/WhatsApp. */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-muted);
+  animation: typing-bounce 1s infinite ease-in-out;
+}
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-4px); opacity: 1; }
 }

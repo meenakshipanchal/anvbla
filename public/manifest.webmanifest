@@ -1,0 +1,22 @@
+{
+  "name": "BlaBlue — Carpooling in India",
+  "short_name": "BlaBlue",
+  "description": "Find low-cost carpool rides across India. Search, book, and publish rides with verified members.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#054752",
+  "categories": ["travel", "navigation", "lifestyle"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Search rides", "short_name": "Search", "url": "/search" },
+    { "name": "Publish a ride", "short_name": "Publish", "url": "/publish" }
+  ]
+}

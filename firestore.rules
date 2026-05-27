@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Rides: public read (anyone can browse listings). All writes go through
+    // the server (Admin SDK), which bypasses these rules.
+    match /rides/{rideId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Bookings: still server-only (passenger lat/lng + price details).
+    match /bookings/{bookingId} {
+      allow read, write: if false;
+    }
+
+    // Threads: a chat between a passenger and a driver. The two participants
+    // may READ in real-time (powers the inbox list + the per-chat onSnapshot).
+    // All writes (create, message timestamps, lastReadAt, typing) still go
+    // through the Admin SDK from /api/messages, so the rule denies client writes.
+    match /threads/{threadId} {
+      allow read: if request.auth != null &&
+        (resource.data.passengerId == request.auth.uid ||
+         resource.data.driverId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Messages live in a top-level collection keyed by threadId. We can't do a
+    // cheap participant check without an extra get(), so we allow reads for
+    // any signed-in user PROVIDED the message carries the requesting user's
+    // uid as a participant via the parent thread lookup. Writes are server-only.
+    match /messages/{messageId} {
+      allow read: if request.auth != null &&
+        exists(/databases/$(database)/documents/threads/$(resource.data.threadId)) &&
+        (get(/databases/$(database)/documents/threads/$(resource.data.threadId)).data.passengerId == request.auth.uid ||
+         get(/databases/$(database)/documents/threads/$(resource.data.threadId)).data.driverId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Posted rides + booked rides nested under users — server-only writes,
+    // and we don't expose them to client reads yet (the trips page is
+    // server-rendered via the Admin SDK).
+    match /users/{userId}/postedRides/{rideId} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/bookedRides/{bookingId} {
+      allow read, write: if false;
+    }
+    // FCM device tokens: written by the server via Admin SDK
+    // (POST /api/fcm/register). Clients never read them directly.
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if false;
+    }
+
+    // Lock everything else down by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -33,8 +33,16 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Firebase Admin service account keys (SECRET — never commit)
+*firebase-adminsdk*.json
+*serviceAccount*.json
+service-account*.json
+
 # vercel
 .vercel
+
+# Claude Code session data (not part of the app)
+.claude/
 
 # typescript
 *.tsbuildinfo
