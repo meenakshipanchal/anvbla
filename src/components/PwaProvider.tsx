@@ -18,26 +18,23 @@ export default function PwaProvider() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // The PWA cache service worker is a PRODUCTION-only optimisation. In dev
-    // it caches Next's HMR chunks cache-first and serves stale UI, so we skip
-    // registration and clean up the PWA SW from any previous build.
-    //
-    // IMPORTANT: we MUST NOT touch the FCM service worker
-    // (/firebase-messaging-sw.js) here — that one handles push notifications
+    // PWA cache service worker is currently DISABLED — it was breaking the
+    // Firebase auth flow on production (intercepting cross-origin fetches and
+    // throwing "Failed to fetch" mid-sign-in). Also actively unregister any
+    // /sw.js that older builds installed in users' browsers, so they're not
+    // stuck with a stale cache. The FCM service worker
+    // (/firebase-messaging-sw.js) is left alone — it powers push notifications
     // and is registered on-demand by requestPushPermission().
     if ("serviceWorker" in navigator) {
-      if (process.env.NODE_ENV === "production") {
-        navigator.serviceWorker.register("/sw.js").catch(() => {});
-      } else {
-        navigator.serviceWorker.getRegistrations().then((rs) => {
-          for (const r of rs) {
-            const url = r.active?.scriptURL || "";
-            if (url.endsWith("/firebase-messaging-sw.js")) continue; // keep FCM
-            r.unregister();
-          }
-        });
-        if ("caches" in window) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
-      }
+      navigator.serviceWorker.getRegistrations().then((rs) => {
+        for (const r of rs) {
+          const url = r.active?.scriptURL || "";
+          if (url.endsWith("/firebase-messaging-sw.js")) continue; // keep FCM
+          r.unregister();
+        }
+      });
+      // Clear any cached responses the old PWA SW left behind.
+      if ("caches" in window) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
     }
 
     const onPrompt = (e: Event) => {
