@@ -42,7 +42,18 @@ echo "▶ Installing certbot for Let's Encrypt SSL..."
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx
 
 echo "▶ Enabling unattended-upgrades (auto security patches nightly)..."
-sudo dpkg-reconfigure -plow unattended-upgrades || true
+# Write the config directly — dpkg-reconfigure pops an interactive dialog
+# that browser-SSH can't talk to (arrow keys often don't pass through).
+# The two lines below are exactly what 'reconfigure → Yes' produces, and the
+# 20auto-upgrades file just below is the actual on/off switch.
+sudo tee /etc/apt/apt.conf.d/50unattended-upgrades.local >/dev/null <<'EOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
 sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
