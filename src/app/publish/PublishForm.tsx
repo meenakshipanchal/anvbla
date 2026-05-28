@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import PlaceInput from "@/components/PlaceInput";
@@ -79,7 +79,7 @@ export default function PublishForm() {
   const [date, setDate] = useState(todayISO());
   const [time, setTime] = useState("08:00");
   const [seats, setSeats] = useState("3");
-  const [price, setPrice] = useState("499");
+  const [price, setPrice] = useState("");
   const [note, setNote] = useState("");
   const [extra, setExtra] = useState("");
   const [car, setCar] = useState("");
@@ -99,6 +99,21 @@ export default function PublishForm() {
   const [arrTime, setArrTime] = useState(""); // ETA — typed by the driver
   const [loading, setLoading] = useState(false);
   const [lastRide, setLastRide] = useState<SavedRide | null>(null);
+  // Latest blocking error — rendered as a prominent banner at the top of the
+  // form so the driver doesn't have to scroll hunting for a tiny toast that
+  // disappeared. Set by both client-side validation and the server response.
+  const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Scroll the form into view + clear `error` whenever it changes (so the
+  // banner is always visible when something goes wrong).
+  function reportError(msg: string) {
+    setError(msg);
+    toast(msg);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   // Trip duration derived purely from the driver's typed departure + arrival.
   const durHint = (() => {
@@ -147,26 +162,13 @@ export default function PublishForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!from || !to) {
-      toast("Please add both pickup and drop-off cities.");
-      return;
-    }
-    if (!arrTime) {
-      toast("Please add the estimated arrival time (ETA).");
-      return;
-    }
-    if (!plate.trim()) {
-      toast("Please enter the number plate.");
-      return;
-    }
-    if (!PLATE_REGEX.test(plate.trim())) {
-      toast("Number plate must look like 'HR 26 AB 1234' (SS NN XX NNNN).");
-      return;
-    }
-    if (!routeVia.trim()) {
-      toast("Please add the route you’re taking.");
-      return;
-    }
+    setError(null);
+    if (!from || !to) return reportError("Please add both pickup and drop-off cities.");
+    if (!arrTime) return reportError("Please add the estimated arrival time (ETA).");
+    if (!plate.trim()) return reportError("Please enter the number plate.");
+    if (!PLATE_REGEX.test(plate.trim()))
+      return reportError("Number plate must look like 'HR 26 AB 1234' (SS NN XX NNNN).");
+    if (!routeVia.trim()) return reportError("Please add the route you’re taking.");
     setLoading(true);
     // Fold the extra "additional points" into the note that passengers see.
     const fullNote = [note.trim(), extra.trim()].filter(Boolean).join("\n");
@@ -197,7 +199,7 @@ export default function PublishForm() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast(err.error || "Couldn’t publish your ride. Please try again.");
+        reportError(err.error || "Couldn’t publish your ride. Please try again.");
         return;
       }
       const { id } = await res.json();
@@ -216,7 +218,7 @@ export default function PublishForm() {
       toast(`Ride published! ${from} → ${to}.`);
       router.push(`/ride/${id}`);
     } catch {
-      toast("Network error — please try again.");
+      reportError("Network error — please try again.");
     } finally {
       setLoading(false);
     }
@@ -227,9 +229,23 @@ export default function PublishForm() {
 
   return (
     <form
+      ref={formRef}
       onSubmit={submit}
-      className="relative z-10 mx-auto -mt-10 mb-12 max-w-[720px] rounded-[22px] bg-white p-5 shadow-[var(--shadow-lg)] sm:-mt-16 sm:mb-16 sm:p-8"
+      className="relative z-10 mx-auto -mt-10 mb-12 max-w-[720px] scroll-mt-24 rounded-[22px] bg-white p-5 shadow-[var(--shadow-lg)] sm:-mt-16 sm:mb-16 sm:p-8"
     >
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 flex items-start gap-2 rounded-xl border border-[#c0392b]/30 bg-[#fdecea] px-4 py-3 font-semibold text-[#c0392b]"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4M12 16h.01" />
+          </svg>
+          <span className="break-words">{error}</span>
+        </div>
+      )}
+
       {lastRide && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-bgtint px-3 py-1.5 text-xs">
           <span className="min-w-0 truncate">
@@ -320,9 +336,11 @@ export default function PublishForm() {
             type="number"
             min={0}
             step={10}
+            required
             className={inputCls}
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+            placeholder="e.g. 499"
           />
         </div>
       </div>

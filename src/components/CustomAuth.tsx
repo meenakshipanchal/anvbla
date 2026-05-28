@@ -35,6 +35,10 @@ export default function CustomAuth() {
   const router = useRouter();
   const { user } = useFirebaseUser();
   const [error, setError] = useState("");
+  // Loading state for the sign-in button — shown while Google's popup is open
+  // AND while we're exchanging the idToken for a server session. Without this,
+  // there's a 1-3s window where the page looks frozen.
+  const [signingIn, setSigningIn] = useState(false);
   // Where to send the user after sign-in (set by the proxy when it bounced them
   // here), plus the saved search route for a friendly "your effort is safe" note.
   const [next, setNext] = useState<string | null>(null);
@@ -66,29 +70,13 @@ export default function CustomAuth() {
       setError("Google sign-in isn’t configured yet. Add your Firebase keys to .env.local.");
       return;
     }
+    setSigningIn(true);
     try {
-      const result = await signInWithPopup(firebaseAuth, googleProvider);
-      // EXPLICITLY create the server session cookie before navigating. The
-      // FirebaseProvider's onIdTokenChanged also does this in the background,
-      // but if we redirect first the proxy won't see the cookie yet and will
-      // bounce us right back here — classic Vercel/Next race.
-      const idToken = await result.user.getIdToken();
-      const res = await fetch("/api/auth/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(
-          data.error ||
-            "Signed in with Google, but the server couldn’t create a session. " +
-              "Usually means FIREBASE_PRIVATE_KEY is missing or malformed on the server."
-        );
-        return;
-      }
-      // Cookie is now set — navigation will succeed past the proxy check.
-      router.replace(next || "/trips");
+      await signInWithPopup(firebaseAuth, googleProvider);
+      // FirebaseProvider's onIdTokenChanged creates the server session cookie
+      // and only exposes `user` AFTER it's set — the useEffect above then
+      // navigates. Leave signingIn=true so the button keeps its loading state
+      // until that redirect fires (avoids the button appearing "frozen").
     } catch (err) {
       const code = (err as { code?: string }).code;
       // Popup blocked / unsupported → fall back to a full-page redirect sign-in.
@@ -98,11 +86,13 @@ export default function CustomAuth() {
           return;
         } catch (e) {
           setError(firebaseError(e));
+          setSigningIn(false);
           return;
         }
       }
       const msg = firebaseError(err);
       if (msg) setError(msg);
+      setSigningIn(false);
     }
   }
 
@@ -138,10 +128,22 @@ export default function CustomAuth() {
       <button
         type="button"
         onClick={handleGoogle}
-        disabled={!isFirebaseConfigured}
-        className="btn btn-outline w-full disabled:opacity-50"
+        disabled={!isFirebaseConfigured || signingIn}
+        className="btn btn-outline w-full disabled:opacity-60"
       >
-        <GoogleG /> Continue with Google
+        {signingIn ? (
+          <>
+            <span
+              aria-hidden
+              className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+            />
+            Signing you in…
+          </>
+        ) : (
+          <>
+            <GoogleG /> Continue with Google
+          </>
+        )}
       </button>
 
       {error && <p className="mt-4 rounded-lg bg-[#fdecec] px-3 py-2 text-center text-sm text-[#c0392b]">{error}</p>}
