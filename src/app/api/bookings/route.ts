@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import { createBooking, respondToBooking, countPendingRequestsForDriver } from "@/lib/bookings";
+import { RIDES_TAG } from "@/lib/rides";
 import { sendPush } from "@/lib/push";
 
 /* Book seats on a ride. Requires a verified Firebase session. */
@@ -23,7 +24,10 @@ export async function POST(req: NextRequest) {
     });
     // Bust /trips (so the driver's badge + requests panel update on next render)
     // and /ride/[id] (seat count may have changed on accept). /search lists the
-    // same seat count so revalidate it too.
+    // same seat count so revalidate it too. `'max'` = stale-while-revalidate
+    // so accepts/declines don't block on a Firestore round-trip.
+    revalidateTag(RIDES_TAG, "max");
+    revalidateTag(`ride:${rideId}`, "max");
     revalidatePath("/trips");
     revalidatePath("/search");
     revalidatePath(`/ride/${rideId}`);
@@ -57,6 +61,8 @@ export async function PATCH(req: NextRequest) {
       action,
       typeof reason === "string" ? reason : undefined
     );
+    revalidateTag(RIDES_TAG, "max");
+    revalidateTag(`ride:${result.rideId}`, "max");
     revalidatePath("/trips");
     revalidatePath("/search");
     revalidatePath(`/ride/${result.rideId}`);
