@@ -2,22 +2,19 @@ import PublishForm from "./PublishForm";
 
 export const metadata = { title: "Publish a ride" };
 
+/* Publish flow runs as a step-by-step wizard. The page wrapper stays minimal
+   on purpose so the active step is the only thing in view — same idea as
+   BlaBlaCar's mobile flow. The big marketing header that used to live here
+   was pushing the form below the fold on mobile. */
 export default function PublishPage() {
   return (
-    <>
-      <section className="bg-[linear-gradient(160deg,#054752,#0a5d6b)] py-12 text-white">
+    <div className="pb-10">
+      <header className="border-b border-line bg-white py-4">
         <div className="wrap">
-          <span className="eyebrow text-green">Become a driver</span>
-          <h1 className="mt-2 max-w-[640px] text-[clamp(24px,4vw,34px)] font-bold leading-tight">
-            Publish a ride and share your travel costs
-          </h1>
-          <p className="mt-3 max-w-[560px] text-lg text-[#cfe9ee]">
-            Heading somewhere with empty seats? Fill in your trip and we’ll match you with passengers going your way.
-          </p>
+          <h1 className="font-bold">Publish a ride</h1>
         </div>
-      </section>
-
+      </header>
       <PublishForm />
-    </>
+    </div>
   );
 }

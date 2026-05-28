@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import PlaceInput from "@/components/PlaceInput";
@@ -15,24 +15,19 @@ function todayISO() {
 // Standard Indian plate: SS NN XX NNNN (e.g. HR 26 AB 1234).
 const PLATE_REGEX = /^[A-Z]{2}\s\d{1,2}\s[A-Z]{1,2}\s\d{4}$/;
 
-// Live formatter — as the driver types, normalise to the SS NN XX NNNN groups.
 function formatPlate(raw: string): string {
   const s = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
   const out: string[] = [];
   let i = 0;
   let part = "";
-  // State code (2 letters)
   while (i < s.length && part.length < 2 && /[A-Z]/.test(s[i])) part += s[i++];
   if (part) out.push(part);
-  // RTO code (up to 2 digits)
   part = "";
   while (i < s.length && part.length < 2 && /\d/.test(s[i])) part += s[i++];
   if (part) out.push(part);
-  // Series (up to 2 letters)
   part = "";
   while (i < s.length && part.length < 2 && /[A-Z]/.test(s[i])) part += s[i++];
   if (part) out.push(part);
-  // Vehicle number (up to 4 digits)
   part = "";
   while (i < s.length && part.length < 4 && /\d/.test(s[i])) part += s[i++];
   if (part) out.push(part);
@@ -67,13 +62,27 @@ type SavedRide = {
   amenities: Record<AmenityKey, boolean>;
 };
 
+// Wizard step keys — order here drives the screen sequence.
+const STEPS = [
+  "from",
+  "to",
+  "when",
+  "eta",
+  "seatsPrice",
+  "vehicle",
+  "plate",
+  "route",
+  "comfort",
+  "note",
+  "review",
+] as const;
+type StepKey = (typeof STEPS)[number];
+
 export default function PublishForm() {
   const router = useRouter();
+  const [step, setStep] = useState<number>(0);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  // Precise coords when the user picked a spot on the map (or used GPS) —
-  // we send these along so the ride is pinned to that exact location,
-  // not the area centroid that text geocoding would return.
   const [fromCoords, setFromCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [toCoords, setToCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [date, setDate] = useState(todayISO());
@@ -96,26 +105,11 @@ export default function PublishForm() {
     womenOnly: false,
     lgbtq: false,
   });
-  const [arrTime, setArrTime] = useState(""); // ETA — typed by the driver
+  const [arrTime, setArrTime] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastRide, setLastRide] = useState<SavedRide | null>(null);
-  // Latest blocking error — rendered as a prominent banner at the top of the
-  // form so the driver doesn't have to scroll hunting for a tiny toast that
-  // disappeared. Set by both client-side validation and the server response.
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
 
-  // Scroll the form into view + clear `error` whenever it changes (so the
-  // banner is always visible when something goes wrong).
-  function reportError(msg: string) {
-    setError(msg);
-    toast(msg);
-    requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }
-
-  // Trip duration derived purely from the driver's typed departure + arrival.
   const durHint = (() => {
     if (!time || !arrTime) return "";
     const [dh, dm] = time.split(":").map(Number);
@@ -130,7 +124,6 @@ export default function PublishForm() {
 
   const toggle = (k: AmenityKey) => setAmenities((a) => ({ ...a, [k]: !a[k] }));
 
-  // Offer to republish the driver's previous ride (saved locally).
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LAST_RIDE_KEY);
@@ -140,7 +133,6 @@ export default function PublishForm() {
     }
   }, []);
 
-  // Prefill the whole form from the last ride — every field stays editable.
   function reuseLast() {
     if (!lastRide) return;
     setFrom(lastRide.from);
@@ -157,20 +149,70 @@ export default function PublishForm() {
     setRouteVia(lastRide.routeVia ?? "");
     setVehicle(lastRide.vehicle ?? "car");
     setAmenities(lastRide.amenities);
-    setLastRide(null); // hide the banner once applied
+    setLastRide(null);
+    setStep(STEPS.length - 1); // jump straight to review when reusing
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  // Validate the current step before advancing. Returns an error message or
+  // null. Keeping validation per-step means the user can never get past a
+  // screen with bad data, and "Continue" stays disabled accordingly.
+  function validateStep(key: StepKey): string | null {
+    switch (key) {
+      case "from":
+        return from.trim() ? null : "Please add the pickup location.";
+      case "to":
+        return to.trim() ? null : "Please add the drop-off location.";
+      case "when":
+        if (!date) return "Please pick a date.";
+        if (!time) return "Please pick a departure time.";
+        return null;
+      case "eta":
+        return arrTime ? null : "Please add the estimated arrival time.";
+      case "seatsPrice":
+        if (!seats) return "Please choose how many seats are available.";
+        if (!price || Number(price) < 0) return "Please enter a price per seat.";
+        return null;
+      case "plate":
+        if (!plate.trim()) return "Please enter the number plate.";
+        if (!PLATE_REGEX.test(plate.trim()))
+          return "Number plate must look like 'HR 26 AB 1234'.";
+        return null;
+      case "route":
+        return routeVia.trim() ? null : "Please add the route you're taking.";
+      default:
+        return null;
+    }
+  }
+
+  function goNext() {
+    const err = validateStep(STEPS[step]);
+    if (err) {
+      setError(err);
+      toast(err);
+      return;
+    }
     setError(null);
-    if (!from || !to) return reportError("Please add both pickup and drop-off cities.");
-    if (!arrTime) return reportError("Please add the estimated arrival time (ETA).");
-    if (!plate.trim()) return reportError("Please enter the number plate.");
-    if (!PLATE_REGEX.test(plate.trim()))
-      return reportError("Number plate must look like 'HR 26 AB 1234' (SS NN XX NNNN).");
-    if (!routeVia.trim()) return reportError("Please add the route you’re taking.");
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  }
+
+  function goBack() {
+    setError(null);
+    setStep((s) => Math.max(s - 1, 0));
+  }
+
+  async function submit() {
+    setError(null);
+    // Final defensive check — every step has been validated already, but the
+    // backend should still get a clean payload.
+    for (const key of STEPS) {
+      const err = validateStep(key);
+      if (err) {
+        setError(err);
+        toast(err);
+        return;
+      }
+    }
     setLoading(true);
-    // Fold the extra "additional points" into the note that passengers see.
     const fullNote = [note.trim(), extra.trim()].filter(Boolean).join("\n");
     try {
       const res = await fetch("/api/rides", {
@@ -198,12 +240,12 @@ export default function PublishForm() {
         }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        reportError(err.error || "Couldn’t publish your ride. Please try again.");
+        const errPayload = await res.json().catch(() => ({}));
+        setError(errPayload.error || "Couldn't publish your ride. Please try again.");
+        toast(errPayload.error || "Couldn't publish your ride.");
         return;
       }
       const { id } = await res.json();
-      // Remember this ride so the driver can republish it next time.
       try {
         localStorage.setItem(
           LAST_RIDE_KEY,
@@ -218,44 +260,49 @@ export default function PublishForm() {
       toast(`Ride published! ${from} → ${to}.`);
       router.push(`/ride/${id}`);
     } catch {
-      reportError("Network error — please try again.");
+      setError("Network error — please try again.");
+      toast("Network error — please try again.");
     } finally {
       setLoading(false);
     }
   }
 
   const inputCls =
-    "w-full rounded-xl border-[1.5px] border-line px-4 py-3 text-[15px] text-ink outline-none transition focus:border-blue";
+    "w-full rounded-xl border-[1.5px] border-line bg-white px-4 py-3.5 text-[15px] text-ink outline-none transition focus:border-blue";
+
+  const stepKey = STEPS[step];
+  const isLast = step === STEPS.length - 1;
+  const progress = ((step + 1) / STEPS.length) * 100;
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={submit}
-      className="relative z-10 mx-auto -mt-10 mb-12 max-w-[720px] scroll-mt-24 rounded-[22px] bg-white p-5 shadow-[var(--shadow-lg)] sm:-mt-16 sm:mb-16 sm:p-8"
-    >
-      {error && (
+    <div className="mx-auto mb-12 max-w-[560px] px-4 pt-6 sm:pt-10">
+      {/* Progress */}
+      <div className="mb-2 flex items-center justify-between text-xs font-semibold text-muted">
+        <span>Step {step + 1} of {STEPS.length}</span>
+        {!isLast && step > 0 && (
+          <button type="button" onClick={goBack} className="font-semibold text-blue hover:underline">
+            ← Back
+          </button>
+        )}
+      </div>
+      <div className="mb-7 h-1.5 w-full overflow-hidden rounded-full bg-bgsoft">
         <div
-          role="alert"
-          className="mb-4 flex items-start gap-2 rounded-xl border border-[#c0392b]/30 bg-[#fdecea] px-4 py-3 font-semibold text-[#c0392b]"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4M12 16h.01" />
-          </svg>
-          <span className="break-words">{error}</span>
-        </div>
-      )}
+          className="h-full rounded-full bg-blue transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
 
-      {lastRide && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-bgtint px-3 py-1.5 text-xs">
+      {/* Reuse-last banner — only on the first step so it doesn't get noisy. */}
+      {step === 0 && lastRide && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-bgtint px-4 py-3 text-sm">
           <span className="min-w-0 truncate">
             <span className="font-semibold">Republish last ride?</span>{" "}
             <span className="text-muted">
               {lastRide.from} → {lastRide.to}
             </span>
           </span>
-          <span className="flex shrink-0 gap-1.5">
-            <button type="button" onClick={reuseLast} className="rounded-full bg-blue px-3 py-1 font-semibold text-white">
+          <span className="flex shrink-0 gap-2">
+            <button type="button" onClick={reuseLast} className="rounded-full bg-blue px-3 py-1.5 font-semibold text-white">
               Use
             </button>
             <button type="button" onClick={() => setLastRide(null)} className="px-2 py-1 font-semibold text-muted">
@@ -265,215 +312,359 @@ export default function PublishForm() {
         </div>
       )}
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Leaving from</label>
-          <PlaceInput
-            value={from}
-            onChange={(v, c) => {
-              setFrom(v);
-              setFromCoords(c ?? null);
-            }}
-            placeholder="Pickup location or address"
-            className={inputCls}
-            currentLocation
-            pickOnMap
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Going to</label>
-          <PlaceInput
-            value={to}
-            onChange={(v, c) => {
-              setTo(v);
-              setToCoords(c ?? null);
-            }}
-            placeholder="Drop-off location or address"
-            className={inputCls}
-            currentLocation
-            pickOnMap
-          />
-        </div>
-      </div>
+      {/* Step content */}
+      <div className="rounded-2xl bg-white p-5 shadow-[var(--shadow-md)] sm:p-7">
+        {stepKey === "from" && (
+          <Screen
+            title="Where are you leaving from?"
+            hint="Tap the locate icon or pick a spot on the map for exact pickup."
+          >
+            <PlaceInput
+              value={from}
+              onChange={(v, c) => {
+                setFrom(v);
+                setFromCoords(c ?? null);
+              }}
+              placeholder="Pickup location or address"
+              className={inputCls}
+              currentLocation
+              pickOnMap
+            />
+          </Screen>
+        )}
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Date</label>
-          <input type="date" className={inputCls} value={date} min={todayISO()} onChange={(e) => setDate(e.target.value)} />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Departure time</label>
-          <input type="time" className={inputCls} value={time} onChange={(e) => setTime(e.target.value)} />
-        </div>
-      </div>
+        {stepKey === "to" && (
+          <Screen
+            title="Where are you going?"
+            hint="Tap the locate icon or pick a spot on the map for exact drop-off."
+          >
+            <PlaceInput
+              value={to}
+              onChange={(v, c) => {
+                setTo(v);
+                setToCoords(c ?? null);
+              }}
+              placeholder="Drop-off location or address"
+              className={inputCls}
+              currentLocation
+              pickOnMap
+            />
+          </Screen>
+        )}
 
-      <div className="mb-4">
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">Estimated arrival — ETA</label>
-        <input
-          type="time"
-          required
-          className={inputCls}
-          value={arrTime}
-          onChange={(e) => setArrTime(e.target.value)}
-        />
-        {durHint && <p className="mt-1.5 text-xs text-muted">Trip duration: ~{durHint}</p>}
-      </div>
+        {stepKey === "when" && (
+          <Screen title="When are you leaving?">
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Date</label>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={date}
+                  min={todayISO()}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Departure time</label>
+                <input
+                  type="time"
+                  className={inputCls}
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                />
+              </div>
+            </div>
+          </Screen>
+        )}
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Seats available</label>
-          <select className={inputCls} value={seats} onChange={(e) => setSeats(e.target.value)}>
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <option key={n} value={n}>
-                {n} seat{n > 1 ? "s" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Price per seat (₹)</label>
-          <input
-            type="number"
-            min={0}
-            step={10}
-            required
-            className={inputCls}
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="e.g. 499"
-          />
-        </div>
-      </div>
+        {stepKey === "eta" && (
+          <Screen
+            title="When will you arrive?"
+            hint="Your best estimate. Passengers see this on the ride card."
+          >
+            <input
+              type="time"
+              className={inputCls}
+              value={arrTime}
+              onChange={(e) => setArrTime(e.target.value)}
+            />
+            {durHint && (
+              <p className="mt-3 rounded-lg bg-sky-soft px-3 py-2 text-sm font-semibold text-blue">
+                Trip duration: ~{durHint}
+              </p>
+            )}
+          </Screen>
+        )}
 
-      <div className="mb-4">
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">Vehicle type</label>
-        <div className="grid grid-cols-2 gap-2.5">
-          {([
-            ["car", "Car", Car],
-            ["auto", "Auto", Auto],
-          ] as const).map(([val, label, Icon]) => (
-            <label
-              key={val}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border-[1.5px] px-3 py-2.5 transition ${
-                vehicle === val ? "border-blue bg-bgtint text-blue" : "border-line"
-              }`}
-            >
+        {stepKey === "seatsPrice" && (
+          <Screen title="How many seats & at what price?">
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Seats available</label>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      onClick={() => setSeats(String(n))}
+                      className={`min-w-12 rounded-full border-[1.5px] px-4 py-2 font-semibold transition ${
+                        seats === String(n)
+                          ? "border-blue bg-blue text-white"
+                          : "border-line text-ink hover:border-sky"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Price per seat (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
+                  className={inputCls}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="e.g. 499"
+                />
+              </div>
+            </div>
+          </Screen>
+        )}
+
+        {stepKey === "vehicle" && (
+          <Screen title="What are you driving?">
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                ["car", "Car", Car],
+                ["auto", "Auto", Auto],
+              ] as const).map(([val, label, Icon]) => (
+                <button
+                  type="button"
+                  key={val}
+                  onClick={() => setVehicle(val)}
+                  className={`flex flex-col items-center gap-2 rounded-2xl border-[1.5px] px-3 py-6 transition ${
+                    vehicle === val ? "border-blue bg-bgtint text-blue" : "border-line"
+                  }`}
+                >
+                  <Icon width={32} height={32} />
+                  <span className="font-semibold">{label}</span>
+                </button>
+              ))}
+            </div>
+          </Screen>
+        )}
+
+        {stepKey === "plate" && (
+          <Screen
+            title="Your vehicle details"
+            hint="Plate is required — it lets passengers spot your vehicle at pickup."
+          >
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
+                  Number plate <span className="text-[#c0392b]">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={13}
+                  className={inputCls}
+                  value={plate}
+                  onChange={(e) => setPlate(formatPlate(e.target.value))}
+                  placeholder="HR 26 AB 1234"
+                />
+                <p className="mt-1.5 text-xs text-muted">Format: SS NN XX NNNN</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Car model (optional)</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={car}
+                  onChange={(e) => setCar(e.target.value)}
+                  placeholder="e.g. Maruti Swift"
+                />
+              </div>
+            </div>
+          </Screen>
+        )}
+
+        {stepKey === "route" && (
+          <Screen
+            title="Which route are you taking?"
+            hint="Helps passengers know which way you're going."
+          >
+            <div className="grid gap-4">
               <input
-                type="radio"
-                name="vehicle"
-                className="sr-only"
-                checked={vehicle === val}
-                onChange={() => setVehicle(val)}
+                type="text"
+                className={inputCls}
+                value={routeVia}
+                onChange={(e) => setRouteVia(e.target.value)}
+                placeholder="e.g. via NH8 · Manesar · Kotputli"
               />
-              <Icon width={18} height={18} />
-              <span className="font-semibold">{label}</span>
-            </label>
-          ))}
-        </div>
-      </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Stops on the way (optional)</label>
+                <select className={inputCls} value={stops} onChange={(e) => setStops(e.target.value)}>
+                  <option value="">Not specified</option>
+                  <option value="0">Non-stop</option>
+                  <option value="1">1 stop</option>
+                  <option value="2">2 stops</option>
+                  <option value="3">3+ stops</option>
+                </select>
+              </div>
+            </div>
+          </Screen>
+        )}
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">Car model (optional)</label>
-          <input
-            type="text"
-            className={inputCls}
-            value={car}
-            onChange={(e) => setCar(e.target.value)}
-            placeholder="e.g. Maruti Swift"
-          />
-        </div>
-        <div>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <label className="text-[13px] font-semibold text-muted">Number plate</label>
-            <span className="nav-label rounded-full bg-blue px-1.5 py-0.5 font-semibold text-white">Required</span>
-          </div>
-          <input
-            type="text"
-            required
-            maxLength={13}
-            className={`${inputCls} bg-bgtint`}
-            value={plate}
-            onChange={(e) => setPlate(formatPlate(e.target.value))}
-            placeholder="HR 26 AB 1234"
-          />
-          <p className="mt-1.5 text-xs text-muted">Format: SS NN XX NNNN (e.g. HR 26 AB 1234)</p>
-        </div>
-      </div>
+        {stepKey === "comfort" && (
+          <Screen
+            title="Ride comfort"
+            hint="Tap any that apply. Passengers filter on these."
+          >
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {AMENITIES.map(({ key, label }) => (
+                <button
+                  type="button"
+                  key={key}
+                  onClick={() => toggle(key)}
+                  className={`flex items-center justify-between gap-2 rounded-xl border-[1.5px] px-4 py-3 text-left text-[15px] transition ${
+                    amenities[key]
+                      ? "border-blue bg-bgtint text-blue"
+                      : "border-line"
+                  }`}
+                >
+                  <span>{label}</span>
+                  {amenities[key] && <span className="text-blue">✓</span>}
+                </button>
+              ))}
+            </div>
+          </Screen>
+        )}
 
-      <div className="mb-5">
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">Stops on the way (optional)</label>
-        <select className={inputCls} value={stops} onChange={(e) => setStops(e.target.value)}>
-          <option value="">Not specified</option>
-          <option value="0">Non-stop</option>
-          <option value="1">1 stop</option>
-          <option value="2">2 stops</option>
-          <option value="3">3+ stops</option>
-        </select>
-      </div>
+        {stepKey === "note" && (
+          <Screen
+            title="Anything else passengers should know?"
+            hint="Optional — skip if you have nothing to add."
+          >
+            <textarea
+              className={inputCls}
+              rows={4}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Pickup details, luggage space, breaks along the way…"
+            />
+            <input
+              type="text"
+              className={`${inputCls} mt-3`}
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              placeholder="Additional points (e.g. one short stop, light luggage only)…"
+            />
+          </Screen>
+        )}
 
-      <div className="mb-5">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <label className="text-[13px] font-semibold text-muted">Which route are you taking?</label>
-          <span className="nav-label rounded-full bg-blue px-1.5 py-0.5 font-semibold text-white">Required</span>
-        </div>
-        <input
-          type="text"
-          required
-          className={`${inputCls} bg-bgtint`}
-          value={routeVia}
-          onChange={(e) => setRouteVia(e.target.value)}
-          placeholder="e.g. via NH8 · Manesar · Kotputli"
-        />
-        <p className="mt-1.5 text-xs text-muted">
-          Passengers will see this on your ride so they know which way you’re going.
-        </p>
-      </div>
-
-      <div className="mb-5">
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">A note for passengers (optional)</label>
-        <textarea
-          className={inputCls}
-          rows={3}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Pickup details, luggage space, music, breaks along the way…"
-        />
-      </div>
-
-      <div className="mb-5">
-        <label className="mb-2 block text-[13px] font-semibold text-muted">Ride comfort</label>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {AMENITIES.map(({ key, label }) => (
-            <label
-              key={key}
-              className="flex cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-line px-4 py-3 text-[15px] transition has-[:checked]:border-blue has-[:checked]:bg-bgtint"
-            >
-              <input
-                type="checkbox"
-                className="h-4.5 w-4.5 accent-blue"
-                checked={amenities[key]}
-                onChange={() => toggle(key)}
+        {stepKey === "review" && (
+          <Screen title="Review & publish">
+            <ul className="grid gap-2 text-[15px]">
+              <ReviewRow label="From" value={from} />
+              <ReviewRow label="To" value={to} />
+              <ReviewRow label="Date" value={new Date(date).toDateString()} />
+              <ReviewRow label="Departure" value={time} />
+              <ReviewRow label="Arrival ETA" value={arrTime} hint={durHint ? `~${durHint}` : undefined} />
+              <ReviewRow label="Seats" value={`${seats}`} />
+              <ReviewRow label="Price / seat" value={`₹${price}`} />
+              <ReviewRow label="Vehicle" value={`${vehicle === "auto" ? "Auto" : "Car"}${car ? ` · ${car}` : ""}`} />
+              <ReviewRow label="Plate" value={plate} />
+              <ReviewRow label="Route" value={routeVia} />
+              {stops && (
+                <ReviewRow
+                  label="Stops"
+                  value={stops === "0" ? "Non-stop" : `${stops} stop${stops === "1" ? "" : "s"}`}
+                />
+              )}
+              <ReviewRow
+                label="Comfort"
+                value={
+                  AMENITIES.filter((a) => amenities[a.key])
+                    .map((a) => a.label)
+                    .join(" · ") || "—"
+                }
               />
-              {label}
-            </label>
-          ))}
-        </div>
-        <input
-          type="text"
-          className={`${inputCls} mt-2.5`}
-          value={extra}
-          onChange={(e) => setExtra(e.target.value)}
-          placeholder="Additional points to mention (e.g. one short stop, light luggage only)…"
-        />
+              {(note || extra) && <ReviewRow label="Note" value={[note, extra].filter(Boolean).join(" · ")} />}
+            </ul>
+            {error && (
+              <p className="mt-4 rounded-lg bg-[#fdecec] px-3 py-2 text-sm font-semibold text-[#c0392b]">{error}</p>
+            )}
+          </Screen>
+        )}
       </div>
 
-      <button type="submit" disabled={loading} className="btn btn-primary btn-lg w-full disabled:opacity-60">
-        {loading ? "Publishing…" : "Publish ride"}
-      </button>
-      <p className="mt-3 text-center text-xs text-muted">
-        It’s free to publish. We never take a cut of your travel costs.
-      </p>
-    </form>
+      {/* Step-level error banner (non-review steps) */}
+      {error && !isLast && (
+        <div role="alert" className="mt-3 rounded-xl bg-[#fdecea] px-4 py-3 text-sm font-semibold text-[#c0392b]">
+          {error}
+        </div>
+      )}
+
+      {/* Footer actions */}
+      <div className="sticky bottom-0 mt-6 -mx-4 border-t border-line bg-white/95 px-4 py-4 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:pt-6">
+        {!isLast ? (
+          <button type="button" onClick={goNext} className="btn btn-primary btn-lg w-full">
+            Continue
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={submit}
+            disabled={loading}
+            className="btn btn-primary btn-lg w-full disabled:opacity-60"
+          >
+            {loading ? "Publishing…" : "Publish ride"}
+          </button>
+        )}
+        {isLast && (
+          <button type="button" onClick={goBack} className="mt-2 w-full py-2 font-semibold text-muted">
+            ← Edit
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Helpers — kept inline so the wizard stays self-contained.
+   ────────────────────────────────────────────────────────────── */
+function Screen({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <h2 className="mb-1 font-bold tracking-tight">{title}</h2>
+      {hint && <p className="mb-5 text-sm text-muted">{hint}</p>}
+      {!hint && <div className="mb-5" />}
+      {children}
+    </div>
+  );
+}
+
+function ReviewRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <li className="flex items-start justify-between gap-3 border-b border-line py-2 last:border-b-0">
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>
+      <span className="text-right">
+        <span className="font-semibold">{value || "—"}</span>
+        {hint && <span className="ml-1 text-muted">{hint}</span>}
+      </span>
+    </li>
   );
 }
