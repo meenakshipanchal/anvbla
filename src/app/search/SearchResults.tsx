@@ -89,9 +89,72 @@ function toggle<T>(set: Set<T>, k: T): Set<T> {
   return next;
 }
 
-type Query = { rides: Ride[]; from: string; to: string; date: string; seats: string };
+type Query = {
+  rides: Ride[];
+  from: string;
+  to: string;
+  date: string;
+  seats: string;
+  // Server-geocoded coords for the search endpoints. Used to surface NEARBY
+  // rides (within NEARBY_KM) in addition to plain text matches. Null means
+  // geocoding couldn't resolve the term — we then fall back to text only.
+  fromLat: number | null;
+  fromLng: number | null;
+  toLat: number | null;
+  toLng: number | null;
+};
 
-export default function SearchResults({ rides: allRides, from, to, date, seats }: Query) {
+// Radius treated as "near" for endpoint matching. 30 km is generous enough
+// to cover a metro area without surfacing unrelated cities.
+const NEARBY_KM = 30;
+// Wider radius for "along the route" matching — if the user's pickup or
+// drop-off falls within ALONG_KM of the line between the ride's from and
+// to, it's considered a midway-sector match (Gurgaon → Faridabad picks up
+// passengers anywhere along that corridor).
+const ALONG_KM = 20;
+
+type LL = { lat: number; lng: number };
+
+function kmBetween(a: LL, b: LL): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Perpendicular distance (in km) from a point to the great-circle SEGMENT
+// between a and b. We treat lat/lng as Cartesian — fine at city/state scale
+// in India; nothing here drives navigation, just match filtering. Returns
+// the haversine distance from the point to its closest point on the segment.
+function kmToSegment(p: LL, a: LL, b: LL): number {
+  const ax = a.lng, ay = a.lat;
+  const bx = b.lng, by = b.lat;
+  const px = p.lng, py = p.lat;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  // Degenerate segment (from == to) → just point-to-point distance.
+  if (len2 < 1e-12) return kmBetween(p, a);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const closest: LL = { lat: ay + t * dy, lng: ax + t * dx };
+  return kmBetween(p, closest);
+}
+
+export default function SearchResults({
+  rides: allRides,
+  from,
+  to,
+  date,
+  seats,
+  fromLat,
+  fromLng,
+  toLat,
+  toLng,
+}: Query) {
   // Committed filters (drive the results).
   const [flags, setFlags] = useState<Set<FlagKey>>(new Set());
   const [times, setTimes] = useState<Set<TimeKey>>(new Set());
@@ -108,12 +171,52 @@ export default function SearchResults({ rides: allRides, from, to, date, seats }
   const activeCount = flags.size + times.size;
 
   const rides = useMemo(() => {
-    // Match on the first part of the query (e.g. "Sector 45") so the city/state
-    // we now append to a selected place doesn't over-narrow the results.
+    // Each search endpoint matches a ride if EITHER:
+    //   - the ride's text contains the head of the search query, OR
+    //   - the search coord is within NEARBY_KM of the ride's matching endpoint, OR
+    //   - the search coord is within ALONG_KM of the line between the ride's
+    //     two endpoints (i.e. the user's stop falls midway along the trip).
+    // A ride is shown only when BOTH from AND to pass this — keeps results
+    // relevant to the user's actual journey direction.
     const head = (s: string) => s.split(",")[0].trim().toLowerCase();
+
+    const searchFrom: LL | null =
+      typeof fromLat === "number" && typeof fromLng === "number"
+        ? { lat: fromLat, lng: fromLng }
+        : null;
+    const searchTo: LL | null =
+      typeof toLat === "number" && typeof toLng === "number" ? { lat: toLat, lng: toLng } : null;
+
+    function endpointMatches(
+      query: string,
+      searchCoord: LL | null,
+      rideText: string,
+      rideFromCoord: LL | null,
+      rideToCoord: LL | null
+    ): boolean {
+      if (!query) return true;
+      // Text path — works even with no coords on either side.
+      if (rideText.toLowerCase().includes(head(query))) return true;
+      if (!searchCoord) return false;
+      // Coord path: near the ride's own endpoint OR along its route line.
+      if (rideFromCoord && kmBetween(searchCoord, rideFromCoord) <= NEARBY_KM) return true;
+      if (rideToCoord && kmBetween(searchCoord, rideToCoord) <= NEARBY_KM) return true;
+      if (rideFromCoord && rideToCoord && kmToSegment(searchCoord, rideFromCoord, rideToCoord) <= ALONG_KM) return true;
+      return false;
+    }
+
     let list = allRides.filter((r) => {
-      if (from && !r.from.toLowerCase().includes(head(from))) return false;
-      if (to && !r.to.toLowerCase().includes(head(to))) return false;
+      const rideFromCoord: LL | null =
+        typeof r.fromLat === "number" && typeof r.fromLng === "number"
+          ? { lat: r.fromLat, lng: r.fromLng }
+          : null;
+      const rideToCoord: LL | null =
+        typeof r.toLat === "number" && typeof r.toLng === "number"
+          ? { lat: r.toLat, lng: r.toLng }
+          : null;
+
+      if (!endpointMatches(from, searchFrom, r.from, rideFromCoord, rideToCoord)) return false;
+      if (!endpointMatches(to, searchTo, r.to, rideFromCoord, rideToCoord)) return false;
       if (seats && r.seats < Number(seats)) return false;
       return true;
     });
@@ -135,7 +238,7 @@ export default function SearchResults({ rides: allRides, from, to, date, seats }
       dep: (a, b) => a.dep.localeCompare(b.dep),
     };
     return [...list].sort(cmp[sort] ?? cmp.dep);
-  }, [allRides, from, to, seats, flags, times, sort, nameQuery]);
+  }, [allRides, from, to, seats, flags, times, sort, nameQuery, fromLat, fromLng, toLat, toLng]);
 
   // Open the sheet with the currently-applied filters as the starting draft.
   function openSheet() {
