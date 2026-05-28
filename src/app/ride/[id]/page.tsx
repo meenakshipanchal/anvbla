@@ -41,10 +41,16 @@ export default async function RidePage({ params }: { params: Promise<{ id: strin
   const coPassengers = allBookings.filter((b) => b.status === "confirmed");
 
   // Reviews unlock for confirmed passengers once the driver marks the trip done.
+  // We also use myBookings to surface an existing pending/confirmed booking on
+  // this ride to the BookingWidget — so the passenger can't accidentally
+  // double-book.
+  const myBookings = user && !isDriver ? await listBookingsByUser(user.uid) : [];
+  const myActiveBookingOnThisRide = myBookings.find(
+    (b) => b.rideId === ride.id && (b.status === "pending" || b.status === "confirmed")
+  );
   let canReview = false;
   if (user && !isDriver && ride.completed) {
-    const mine = await listBookingsByUser(user.uid);
-    const confirmed = mine.some((b) => b.rideId === ride.id && b.status === "confirmed");
+    const confirmed = myBookings.some((b) => b.rideId === ride.id && b.status === "confirmed");
     canReview = confirmed && !(await hasReviewed(ride.id, user.uid));
   }
 
@@ -295,7 +301,12 @@ export default async function RidePage({ params }: { params: Promise<{ id: strin
             }))}
           />
         ) : (
-          <BookingWidget ride={ride} />
+          <BookingWidget
+            ride={ride}
+            existingStatus={
+              myActiveBookingOnThisRide?.status as "pending" | "confirmed" | undefined
+            }
+          />
         )}
       </div>
     </div>

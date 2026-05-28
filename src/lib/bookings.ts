@@ -41,13 +41,41 @@ export type Booking = {
 
 const COMMISSION_RATE = 0.05; // platform's cut, taken from the driver's earnings
 
+// Server returns this shape when the passenger already has another active
+// booking on the same day — the API surfaces it as a 409 so the client can
+// ask "cancel the old one to book this new one?" instead of silently failing.
+export class SameDayConflictError extends Error {
+  readonly code = "same-day-conflict" as const;
+  readonly conflictingBooking: {
+    id: string;
+    driver: string;
+    from: string;
+    to: string;
+    date: string;
+    status: BookingStatus;
+  };
+  constructor(conflict: SameDayConflictError["conflictingBooking"]) {
+    super(`You already have a booking on ${conflict.date}.`);
+    this.conflictingBooking = conflict;
+  }
+}
+
 export async function createBooking(
   user: SessionUser,
-  input: { rideId: string; driverId: string; seats: number; paymentMethod: PaymentMethod }
+  input: {
+    rideId: string;
+    driverId: string;
+    seats: number;
+    paymentMethod: PaymentMethod;
+    // When true, any active same-day booking the passenger has elsewhere is
+    // auto-declined as part of the same transaction. The client passes this
+    // after the user confirms the "cancel the other one?" prompt.
+    replaceExisting?: boolean;
+  }
 ): Promise<{ id: string; status: BookingStatus }> {
   if (!adminDb) throw new Error("Firestore is not configured.");
   const db = adminDb;
-  const { rideId, driverId, seats, paymentMethod } = input;
+  const { rideId, driverId, seats, paymentMethod, replaceExisting } = input;
 
   await ensureUserDoc(user.uid, user.name);
 
@@ -59,6 +87,92 @@ export async function createBooking(
     const ride = snap.data()!;
     if (driverId === user.uid) throw new Error("You can’t book your own ride.");
     if ((ride.seats ?? 0) < seats) throw new Error("Not enough seats left.");
+
+    // Prevent double-booking. A passenger with an active booking on this
+    // ride — pending OR confirmed — must not be able to file a second
+    // request. A previously declined booking is fine to retry, since the
+    // driver has already said no to the old one.
+    const mineSnap = await tx.get(
+      db.collection("users").doc(user.uid).collection(BOOKED)
+    );
+    const mineActive = mineSnap.docs
+      .map((d) => ({ ref: d.ref, data: d.data() as Record<string, unknown> }))
+      .filter(
+        (b) =>
+          (b.data.status === "pending" || b.data.status === "confirmed") &&
+          // Don't count the just-declined ones — and don't count bookings on
+          // rides that no longer exist (those should self-clean elsewhere).
+          typeof b.data.rideId === "string"
+      );
+
+    if (mineActive.some((b) => b.data.rideId === rideId)) {
+      throw new Error(
+        "You already have a request on this ride. Check Your trips for the status."
+      );
+    }
+
+    // Same-day conflict check. A passenger can only have ONE active booking
+    // per calendar date — if they want to switch rides, they need to release
+    // the existing one first. EXCEPTION: a booking on a trip that's already
+    // marked completed doesn't count, since that trip is done; the passenger
+    // is free to take another ride later the same day.
+    const rideDate = String(ride.date ?? "");
+    const sameDayCandidates = rideDate
+      ? mineActive.filter((b) => String(b.data.date ?? "") === rideDate)
+      : [];
+    const sameDay: typeof sameDayCandidates = [];
+    for (const b of sameDayCandidates) {
+      const bRideId = String(b.data.rideId ?? "");
+      const bDriverId = String(b.data.driverId ?? "");
+      if (!bRideId || !bDriverId) continue;
+      const otherRideSnap = await tx.get(
+        db.collection("users").doc(bDriverId).collection(POSTED).doc(bRideId)
+      );
+      // If the underlying ride is gone or already completed, it's not an
+      // active conflict — the passenger can book again on this date.
+      if (!otherRideSnap.exists) continue;
+      if (otherRideSnap.data()?.completed === true) continue;
+      sameDay.push(b);
+    }
+    if (sameDay.length > 0) {
+      if (!replaceExisting) {
+        const c = sameDay[0];
+        throw new SameDayConflictError({
+          id: c.ref.id,
+          driver: String(c.data.driver ?? ""),
+          from: String(c.data.from ?? ""),
+          to: String(c.data.to ?? ""),
+          date: rideDate,
+          status: c.data.status as BookingStatus,
+        });
+      }
+      // User said "cancel the old one to book this new one." Auto-decline
+      // each conflicting booking and free its seats if it was confirmed.
+      for (const c of sameDay) {
+        const wasConfirmed = c.data.status === "confirmed";
+        tx.update(c.ref, {
+          status: "declined",
+          respondedAt: Date.now(),
+          declineReason: "Cancelled by passenger to book a different ride.",
+        });
+        // If the old booking was already eating seats on its ride, return
+        // them so the next passenger can grab them.
+        if (wasConfirmed && typeof c.data.driverId === "string" && typeof c.data.rideId === "string") {
+          const oldRideRef = db
+            .collection("users")
+            .doc(c.data.driverId as string)
+            .collection(POSTED)
+            .doc(c.data.rideId as string);
+          const oldRideSnap = await tx.get(oldRideRef);
+          if (oldRideSnap.exists) {
+            const oldRide = oldRideSnap.data()!;
+            tx.update(oldRideRef, {
+              seats: (oldRide.seats ?? 0) + (Number(c.data.seats) || 0),
+            });
+          }
+        }
+      }
+    }
 
     // Every booking starts as a request; the driver must accept before seats
     // are taken and the trip is confirmed. (Even on rides flagged 'instant' —

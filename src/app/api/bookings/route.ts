@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
-import { createBooking, respondToBooking, countPendingRequestsForDriver } from "@/lib/bookings";
+import {
+  createBooking,
+  respondToBooking,
+  countPendingRequestsForDriver,
+  SameDayConflictError,
+} from "@/lib/bookings";
 import { RIDES_TAG } from "@/lib/rides";
 import { sendPush } from "@/lib/push";
 
@@ -10,7 +15,9 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Please sign in to book a ride." }, { status: 401 });
 
-  const { rideId, driverId, seats, paymentMethod } = await req.json().catch(() => ({}));
+  const { rideId, driverId, seats, paymentMethod, replaceExisting } = await req
+    .json()
+    .catch(() => ({}));
   const qty = Number(seats) || 0;
   if (!rideId || !driverId || qty < 1) return NextResponse.json({ error: "Invalid booking." }, { status: 400 });
   const method = paymentMethod === "online" ? "online" : "cash";
@@ -21,6 +28,7 @@ export async function POST(req: NextRequest) {
       driverId: String(driverId),
       seats: qty,
       paymentMethod: method,
+      replaceExisting: replaceExisting === true,
     });
     // Bust /trips (so the driver's badge + requests panel update on next render)
     // and /ride/[id] (seat count may have changed on accept). /search lists the
@@ -40,6 +48,19 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ id, status });
   } catch (e) {
+    // 409 + structured payload when the passenger has an active booking on
+    // the same day. Client uses this to ask "cancel the other one?" before
+    // retrying with replaceExisting: true.
+    if (e instanceof SameDayConflictError) {
+      return NextResponse.json(
+        {
+          error: e.message,
+          code: e.code,
+          conflict: e.conflictingBooking,
+        },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 }
