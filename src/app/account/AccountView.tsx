@@ -44,7 +44,9 @@ export default function AccountView() {
   useEffect(() => {
     if (!user) return;
     let alive = true;
-    fetch("/api/profile")
+    // cache: 'no-store' so the browser HTTP cache never serves a stale
+    // pre-save snapshot of the bio after the user comes back from a refresh.
+    fetch("/api/profile", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { profile: null }))
       .then((d: { profile: Profile | null }) => {
         if (!alive) return;

@@ -8,9 +8,15 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
    metadata. The user doc at users/{uid} is the source of truth for editable
    fields; auth metadata covers the rest. */
 
+// Route handlers in Next 15 are dynamic by default, but Vercel + browsers
+// can still cache GETs aggressively. Mark this dynamic + no-store so the
+// freshly-saved bio is never served from anywhere stale.
+export const dynamic = "force-dynamic";
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" } as const;
+
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ profile: null });
+  if (!user) return NextResponse.json({ profile: null }, { headers: NO_STORE });
 
   let bio = "";
   let joinedAt: number | null = null;
@@ -39,16 +45,19 @@ export async function GET() {
     /* ignore — joinedAt stays null */
   }
 
-  return NextResponse.json({
-    profile: {
-      uid: user.uid,
-      name: user.name,
-      email: user.email,
-      picture: user.picture,
-      bio,
-      joinedAt,
+  return NextResponse.json(
+    {
+      profile: {
+        uid: user.uid,
+        name: user.name,
+        email: user.email,
+        picture: user.picture,
+        bio,
+        joinedAt,
+      },
     },
-  });
+    { headers: NO_STORE }
+  );
 }
 
 export async function PATCH(req: NextRequest) {
@@ -64,16 +73,34 @@ export async function PATCH(req: NextRequest) {
   const bio = rawBio.trim().slice(0, 280);
 
   try {
-    await adminDb
-      .collection("users")
-      .doc(user.uid)
-      .set({ bio, name: user.name, updatedAt: Date.now() }, { merge: true });
+    const ref = adminDb.collection("users").doc(user.uid);
+    await ref.set({ bio, name: user.name, updatedAt: Date.now() }, { merge: true });
+    // Read it back so the response definitively reflects what's in Firestore.
+    // Without this, a "200 OK" can paper over a write that didn't actually
+    // land — the user sees a success toast but a refresh shows the old value.
+    const verify = await ref.get();
+    const persisted = String(verify.data()?.bio ?? "");
+    if (persisted !== bio) {
+      console.error("[profile] post-write verify mismatch", {
+        uid: user.uid,
+        wrote: bio.length,
+        readBack: persisted.length,
+      });
+      return NextResponse.json(
+        { error: "Saved, but the value didn’t land in Firestore. Please retry." },
+        { status: 500, headers: NO_STORE }
+      );
+    }
     // Profile shows up on /ride/[id] (driver strip) and could surface in
     // /search later; bust both so updates are immediate.
     revalidatePath("/account");
     revalidatePath("/search");
-    return NextResponse.json({ ok: true, bio });
+    return NextResponse.json({ ok: true, bio: persisted }, { headers: NO_STORE });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("[profile] PATCH failed", { uid: user.uid, error: (e as Error).message });
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 500, headers: NO_STORE }
+    );
   }
 }
