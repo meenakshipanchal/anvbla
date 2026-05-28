@@ -41,10 +41,15 @@ const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 export default function GoogleOneTap() {
   const router = useRouter();
-  const { user } = useFirebaseUser();
+  // `ready` flips true once FirebaseProvider's onIdTokenChanged has fired and
+  // (if there's a cookie) the server session is established. Firing One Tap
+  // before that race finishes makes FedCM reject with NetworkError because
+  // the browser may already have an authenticated Google session for this
+  // origin — wait until we KNOW the user is signed out.
+  const { user, ready } = useFirebaseUser();
 
   useEffect(() => {
-    if (!ONE_TAP_CLIENT_ID || !firebaseAuth || user) return;
+    if (!ONE_TAP_CLIENT_ID || !firebaseAuth || !ready || user) return;
 
     let cancelled = false;
     let pollId: number | null = null;
@@ -94,7 +99,7 @@ export default function GoogleOneTap() {
         /* prompt may already be gone */
       }
     };
-  }, [user, router]);
+  }, [user, ready, router]);
 
   return null;
 }
