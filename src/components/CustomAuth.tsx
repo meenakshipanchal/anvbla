@@ -2,43 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  GoogleAuthProvider,
-  signInWithCredential,
-  signInWithPopup,
-  signInWithRedirect,
-} from "firebase/auth";
+import { signInWithPopup, signInWithRedirect } from "firebase/auth";
 import { firebaseAuth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import { useFirebaseUser } from "./FirebaseProvider";
 import { Logo } from "./Icons";
-
-// Google Identity Services — loaded on demand for the One Tap prompt. Typed
-// inline so we don't need an extra @types package.
-type GsiCredentialResponse = { credential: string };
-type GsiId = {
-  initialize: (config: {
-    client_id: string;
-    callback: (response: GsiCredentialResponse) => void;
-    auto_select?: boolean;
-    cancel_on_tap_outside?: boolean;
-    use_fedcm_for_prompt?: boolean;
-    itp_support?: boolean;
-  }) => void;
-  prompt: () => void;
-  cancel: () => void;
-  disableAutoSelect: () => void;
-};
-declare global {
-  interface Window {
-    google?: { accounts: { id: GsiId } };
-  }
-}
-
-// Web OAuth client ID — same project as Firebase, exposed via env so One Tap
-// can mint a credential the Firebase SDK can exchange. If unset, One Tap is
-// disabled and the user falls back to the "Continue with Google" button.
-// The GSI script itself is loaded from the root layout.
-const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 /* BlaBlue auth — Google sign-in via Firebase.
    NOTE: the Clerk email-OTP flow is disabled for now. Email verification will
@@ -97,70 +64,10 @@ export default function CustomAuth() {
     if (user) router.replace(next || "/trips");
   }, [user, next, router]);
 
-  // Google One Tap — opportunistic, near-zero-friction sign-in. The GSI script
-  // is loaded once at app boot from the root layout, so by the time this
-  // effect runs window.google is usually already there and the prompt shows
-  // with no extra network wait. Skips silently if not configured or already
-  // signed in. The button below stays as a fallback.
-  useEffect(() => {
-    if (!ONE_TAP_CLIENT_ID || !firebaseAuth || user) return;
+  // Google One Tap is mounted globally in the root layout (GoogleOneTap.tsx)
+  // so it appears on any page when a visitor isn't signed in. Nothing to do
+  // from here — keep the "Continue with Google" button below as the fallback.
 
-    let cancelled = false;
-    let pollId: number | null = null;
-
-    const init = () => {
-      if (cancelled || !window.google?.accounts?.id || !firebaseAuth) return;
-      window.google.accounts.id.initialize({
-        client_id: ONE_TAP_CLIENT_ID,
-        use_fedcm_for_prompt: true,
-        cancel_on_tap_outside: false,
-        // Returning users with a single Google session get signed in WITHOUT
-        // a tap — fastest possible path. New users still see the chooser.
-        auto_select: true,
-        itp_support: true,
-        callback: async (response) => {
-          if (!firebaseAuth) return;
-          setError("");
-          setSigningIn(true);
-          try {
-            const cred = GoogleAuthProvider.credential(response.credential);
-            await signInWithCredential(firebaseAuth, cred);
-            // FirebaseProvider's onIdTokenChanged sets the session cookie and
-            // surfaces `user`; the useEffect above then navigates.
-          } catch (err) {
-            const msg = firebaseError(err);
-            if (msg) setError(msg);
-            setSigningIn(false);
-          }
-        },
-      });
-      window.google.accounts.id.prompt();
-    };
-
-    // The <Script> in layout.tsx usually has GSI ready by now. If we're early,
-    // poll briefly until it lands rather than racing the load event (more
-    // reliable than addEventListener('load') when the script is already done).
-    if (window.google?.accounts?.id) {
-      init();
-    } else {
-      pollId = window.setInterval(() => {
-        if (window.google?.accounts?.id) {
-          if (pollId !== null) window.clearInterval(pollId);
-          init();
-        }
-      }, 50);
-    }
-
-    return () => {
-      cancelled = true;
-      if (pollId !== null) window.clearInterval(pollId);
-      try {
-        window.google?.accounts?.id?.cancel();
-      } catch {
-        /* prompt may already be gone */
-      }
-    };
-  }, [user]);
 
   async function handleGoogle() {
     setError("");

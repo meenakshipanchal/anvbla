@@ -4,6 +4,7 @@ import { Poppins } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import FirebaseProvider from "@/components/FirebaseProvider";
+import GoogleOneTap from "@/components/GoogleOneTap";
 
 // Google Identity Services (One Tap). Loaded once at app boot via <Script>
 // so it's parsed in parallel with the page hydration — by the time
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className="flex min-h-full flex-col">
         <FirebaseProvider>
+          <GoogleOneTap />
           <AppShell>{children}</AppShell>
         </FirebaseProvider>
         {ONE_TAP_CLIENT_ID && (
