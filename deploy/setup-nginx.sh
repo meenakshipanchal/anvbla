@@ -11,7 +11,10 @@
 
 set -euo pipefail
 
-PUBLIC_IP="${PUBLIC_IP:-$(curl -s ifconfig.me || echo 13.201.32.141)}"
+# Force IPv4 detection — Lightsail boxes have an IPv6 address that ifconfig.me
+# preferentially returns, which then breaks sslip.io + Let's Encrypt cert
+# validation (the cert is requested for the IPv4 hostname). -4 pins curl to v4.
+PUBLIC_IP="${PUBLIC_IP:-$(curl -4 -s https://ifconfig.me || curl -4 -s https://api.ipify.org || echo 13.201.32.141)}"
 HOST="${HOST:-${PUBLIC_IP}.sslip.io}"
 
 echo "▶ Setting up nginx for $HOST (server IP: $PUBLIC_IP)"
