@@ -4,14 +4,23 @@ import { Bolt, Shield, Star, Car, Auto } from "./Icons";
 
 export default function RideCard({ ride, compact = false }: { ride: Ride; compact?: boolean }) {
   const col = avatarColor(ride.driver);
+  // A ride with no seats left is shown but visually muted so users see it
+  // exists without being able to book it accidentally.
+  const isFull = ride.seats <= 0;
+  const fullClasses = isFull ? "opacity-60 saturate-50 bg-bgsoft" : "bg-white";
 
   if (compact) {
     const Vehicle = ride.vehicle === "auto" ? Auto : Car;
     return (
       <Link
         href={`/ride/${ride.id}`}
-        className="block min-w-0 rounded-xl border border-line bg-white p-3 shadow-[var(--shadow-card)] transition hover:border-sky hover:shadow-md"
+        className={`relative block min-w-0 rounded-xl border border-line p-3 shadow-[var(--shadow-card)] transition hover:border-sky hover:shadow-md ${fullClasses}`}
       >
+        {isFull && (
+          <span className="nav-label absolute right-2 top-2 rounded-full bg-[#c0392b] px-2 py-0.5 font-bold uppercase text-white">
+            Full
+          </span>
+        )}
         {/* Driver name — highlighted on top, with vehicle icon */}
         <div className="mb-1.5 flex items-center gap-1.5 font-bold text-blue">
           <Vehicle width={14} height={14} />
@@ -65,8 +74,13 @@ export default function RideCard({ ride, compact = false }: { ride: Ride; compac
   return (
     <Link
       href={`/ride/${ride.id}`}
-      className="mb-4 grid cursor-pointer grid-cols-1 gap-4 rounded-2xl border border-line bg-white p-5 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 hover:border-sky hover:shadow-md md:grid-cols-[1fr_auto]"
+      className={`relative mb-4 grid cursor-pointer grid-cols-1 gap-4 rounded-2xl border border-line p-5 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 hover:border-sky hover:shadow-md md:grid-cols-[1fr_auto] ${fullClasses}`}
     >
+      {isFull && (
+        <span className="nav-label absolute right-3 top-3 rounded-full bg-[#c0392b] px-2.5 py-0.5 font-bold uppercase text-white">
+          Full
+        </span>
+      )}
       <div>
         <div className="flex gap-3.5">
           <div className="flex flex-col items-center pt-1.5">

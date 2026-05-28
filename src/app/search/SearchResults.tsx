@@ -217,7 +217,9 @@ export default function SearchResults({
 
       if (!endpointMatches(from, searchFrom, r.from, rideFromCoord, rideToCoord)) return false;
       if (!endpointMatches(to, searchTo, r.to, rideFromCoord, rideToCoord)) return false;
-      if (seats && r.seats < Number(seats)) return false;
+      // Full rides (seats === 0) stay in the list intentionally — RideCard
+      // dims them and shows a FULL badge. They get pushed to the bottom by
+      // the sort below so they don't displace bookable options.
       return true;
     });
     list = list.filter((r) => [...flags].every((f) => r[f]));
@@ -237,7 +239,15 @@ export default function SearchResults({
       dur: (a, b) => a.dur.localeCompare(b.dur),
       dep: (a, b) => a.dep.localeCompare(b.dep),
     };
-    return [...list].sort(cmp[sort] ?? cmp.dep);
+    const inner = cmp[sort] ?? cmp.dep;
+    // Always push FULL rides (no seats left) to the bottom of whatever sort
+    // the user picked — they're still surfaced, just out of the way.
+    return [...list].sort((a, b) => {
+      const aFull = a.seats <= 0 ? 1 : 0;
+      const bFull = b.seats <= 0 ? 1 : 0;
+      if (aFull !== bFull) return aFull - bFull;
+      return inner(a, b);
+    });
   }, [allRides, from, to, seats, flags, times, sort, nameQuery, fromLat, fromLng, toLat, toLng]);
 
   // Open the sheet with the currently-applied filters as the starting draft.
