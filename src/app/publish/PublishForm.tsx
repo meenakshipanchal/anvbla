@@ -78,7 +78,14 @@ const STEPS = [
 ] as const;
 type StepKey = (typeof STEPS)[number];
 
-export default function PublishForm() {
+export default function PublishForm({
+  // Server-prefetched fallback from /publish/page.tsx — the user's most recent
+  // published ride from Firestore. Used when localStorage has no entry (fresh
+  // browser/device), so the "Republish last ride?" prompt works cross-device.
+  serverLastRide,
+}: {
+  serverLastRide?: SavedRide | null;
+} = {}) {
   const router = useRouter();
   const [step, setStep] = useState<number>(0);
   const [from, setFrom] = useState("");
@@ -125,13 +132,20 @@ export default function PublishForm() {
   const toggle = (k: AmenityKey) => setAmenities((a) => ({ ...a, [k]: !a[k] }));
 
   useEffect(() => {
+    // Prefer the per-browser snapshot (most recent action by THIS user on
+    // THIS device) — falls back to the server-prefetched ride for first-time
+    // visitors on a new browser.
     try {
       const raw = localStorage.getItem(LAST_RIDE_KEY);
-      if (raw) setLastRide(JSON.parse(raw) as SavedRide);
+      if (raw) {
+        setLastRide(JSON.parse(raw) as SavedRide);
+        return;
+      }
     } catch {
       /* ignore */
     }
-  }, []);
+    if (serverLastRide) setLastRide(serverLastRide);
+  }, [serverLastRide]);
 
   function reuseLast() {
     if (!lastRide) return;

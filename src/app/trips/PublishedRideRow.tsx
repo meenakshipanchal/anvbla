@@ -7,6 +7,24 @@ import { type Ride, rupees } from "@/lib/data";
 import { Bolt, Shield, Tick, Car, Auto, Star } from "@/components/Icons";
 import { toast } from "@/lib/toast";
 
+// Relative time helper for the "Published X ago" stamp. Keeps things terse:
+// "just now" / "5m ago" / "3h ago" / "2d ago" / falls back to a real date
+// past a week. We do this client-side so the value stays fresh as users
+// stare at the page; with createdAt as a ms timestamp this is cheap.
+function timeAgo(ms?: number): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 /* Driver-facing card for "Rides you published" — same content as the public
    RideCard but with an inline delete control so the driver can cancel without
    opening the ride detail page. */
@@ -77,6 +95,11 @@ export default function PublishedRideRow({ ride }: { ride: Ride }) {
         <div className="mt-1 font-semibold break-words">
           {ride.from} → {ride.to}
         </div>
+        {/* When this ride was published — lets the driver tell two near-
+            identical rides apart and judge whether to reuse / repost. */}
+        {ride.createdAt && (
+          <div className="mt-1 text-xs text-muted">Published {timeAgo(ride.createdAt)}</div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-1">
           {ride.instant && (
             <span className="nav-label inline-flex items-center gap-0.5 rounded-full bg-sky-soft px-1.5 py-0.5 font-semibold text-blue">
