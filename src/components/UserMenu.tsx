@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useAuthUser } from "@/lib/useAuthUser";
+import { useAuthUser, type AuthUser } from "@/lib/useAuthUser";
 import { avatarColor, initials } from "@/lib/data";
 import { User, Ticket, Seat } from "./Icons";
 
-/* Custom account dropdown — replaces Clerk's <UserButton/> (no Clerk badge).
-   Works for both Clerk (email) and Firebase (Google) users via useAuthUser. */
-export default function UserMenu() {
-  const { user, signOut } = useAuthUser();
+/* Account dropdown — server-seeded with the cookie-verified user so it
+   paints the right avatar/name on the first frame after a refresh and
+   doesn't briefly flash "Log in" while Firebase rehydrates. */
+export default function UserMenu({ initialUser = null }: { initialUser?: AuthUser | null }) {
+  const { user: liveUser, signOut } = useAuthUser();
+  const user = liveUser ?? initialUser;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

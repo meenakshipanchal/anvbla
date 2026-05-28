@@ -5,6 +5,8 @@ import "./globals.css";
 import AppShell from "@/components/AppShell";
 import FirebaseProvider from "@/components/FirebaseProvider";
 import GoogleOneTap from "@/components/GoogleOneTap";
+import { getCurrentUser } from "@/lib/session";
+import type { AuthUser } from "@/lib/useAuthUser";
 
 // Google Identity Services (One Tap). Loaded once at app boot via <Script>
 // so it's parsed in parallel with the page hydration — by the time
@@ -51,8 +53,22 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // Auth is entirely Firebase (Google) — no Clerk provider needed.
+
+  // Server-verified user (from __session cookie). Threaded into AppShell so the
+  // navbar paints the correct state — avatar vs Log in — on the very first
+  // frame, instead of flashing "Log in" while the Firebase client SDK
+  // rehydrates. The Firebase client takes over once it's ready.
+  const sessionUser = await getCurrentUser();
+  const initialUser: AuthUser | null = sessionUser
+    ? {
+        name: sessionUser.name,
+        email: sessionUser.email,
+        imageUrl: sessionUser.picture,
+        provider: "firebase",
+      }
+    : null;
   return (
     <html lang="en" className={`${poppins.variable} h-full antialiased`}>
       <head>
@@ -68,7 +84,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="flex min-h-full flex-col">
         <FirebaseProvider>
           <GoogleOneTap />
-          <AppShell>{children}</AppShell>
+          <AppShell initialUser={initialUser}>{children}</AppShell>
         </FirebaseProvider>
         {ONE_TAP_CLIENT_ID && (
           <Script

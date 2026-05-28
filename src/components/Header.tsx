@@ -6,13 +6,14 @@ import { usePathname } from "next/navigation";
 import { Logo, Search, Seat, Menu } from "./Icons";
 import AuthButtons from "./AuthButtons";
 import Sidebar from "./Sidebar";
+import type { AuthUser } from "@/lib/useAuthUser";
 
 const LINKS = [
   { href: "/search", label: "Search", Icon: Search },
   { href: "/publish", label: "Publish a ride", Icon: Seat },
 ];
 
-export default function Header() {
+export default function Header({ initialUser = null }: { initialUser?: AuthUser | null }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
 
@@ -58,7 +59,7 @@ export default function Header() {
             </Link>
           </nav>
 
-          <AuthButtons />
+          <AuthButtons initialUser={initialUser} />
         </div>
       </header>
 
