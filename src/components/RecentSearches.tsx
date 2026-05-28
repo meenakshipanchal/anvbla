@@ -22,6 +22,27 @@ type Recent = {
 
 const KEY = "bb-recent-searches";
 
+// Geocoded addresses like "Investopad, 18, Institutional Area, Sector 32,
+// Gurgaon - 110058, HR" don't fit on a mobile row even with truncate. Pull
+// out the short head (the bit users actually recognise) and a brief area
+// hint from the last meaningful segment, so the card stays readable at
+// any width.
+function shortPlace(raw: string): { head: string; area: string } {
+  const parts = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return { head: "", area: "" };
+  if (parts.length === 1) return { head: parts[0], area: "" };
+  // Last segment may be a 2-letter state code — pair it with the previous
+  // segment so the user gets "Gurgaon, HR" instead of just "HR".
+  const last = parts[parts.length - 1];
+  const area = last.length <= 3 && parts.length >= 2
+    ? `${parts[parts.length - 2]}, ${last}`
+    : last;
+  return { head: parts[0], area };
+}
+
 export default function RecentSearches() {
   // Render on mount only — localStorage isn't available on the server, and
   // we don't want a hydration mismatch from a stale snapshot.
@@ -79,11 +100,13 @@ export default function RecentSearches() {
               date: r.date,
               seats: r.seats,
             });
+            const f = shortPlace(r.from);
+            const t = shortPlace(r.to);
             return (
-              <li key={r.ts} className="group flex items-stretch">
+              <li key={r.ts} className="group flex items-stretch gap-2">
                 <Link
                   href={`/search?${params.toString()}`}
-                  className="flex flex-1 items-center gap-3 rounded-xl border border-line bg-white px-4 py-3 transition hover:border-blue"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-line bg-white px-4 py-3 transition hover:border-blue"
                 >
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-bgsoft text-blue">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -92,10 +115,22 @@ export default function RecentSearches() {
                     </svg>
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold">
-                      {r.from} <span className="mx-1 text-muted">→</span> {r.to}
+                    {/* Heads on one line, areas on the next — so the card
+                        works on a 320px-wide phone without truncation
+                        hiding content the user typed. */}
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="truncate">{f.head}</span>
+                      <span className="shrink-0 text-muted">→</span>
+                      <span className="truncate">{t.head}</span>
                     </div>
-                    <div className="truncate text-sm text-muted">
+                    {(f.area || t.area) && (
+                      <div className="truncate text-xs text-muted">
+                        {f.area}
+                        {f.area && t.area ? " · " : ""}
+                        {t.area}
+                      </div>
+                    )}
+                    <div className="mt-0.5 truncate text-xs text-muted">
                       {r.date ? new Date(r.date).toDateString() : "Any date"} ·{" "}
                       {r.seats} passenger{Number(r.seats) > 1 ? "s" : ""}
                     </div>
@@ -108,7 +143,7 @@ export default function RecentSearches() {
                   type="button"
                   aria-label="Remove search"
                   onClick={() => clearOne(r.ts)}
-                  className="ml-2 grid w-10 shrink-0 place-items-center rounded-xl border border-line text-muted hover:border-[#c0392b] hover:text-[#c0392b]"
+                  className="grid w-10 shrink-0 place-items-center rounded-xl border border-line text-muted hover:border-[#c0392b] hover:text-[#c0392b]"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <path d="M18 6L6 18M6 6l12 12" />
