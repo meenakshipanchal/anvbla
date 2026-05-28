@@ -296,12 +296,12 @@ export default function SearchResults({
           {/* Results */}
           <main>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h1 className="font-bold">{from && to ? `${from} → ${to}` : "All rides"}</h1>
-                <div className="text-muted">
-                  {rides.length} ride{rides.length !== 1 ? "s" : ""} found
-                  {date ? ` · ${new Date(date).toDateString()}` : ""}
-                </div>
+              {/* From → To is already spelled out in the SearchCard bar above,
+                  so this row only carries the count + the date — no need for
+                  a huge h1 echoing the same long geocoded strings. */}
+              <div className="text-muted">
+                {rides.length} ride{rides.length !== 1 ? "s" : ""} found
+                {date ? ` · ${new Date(date).toDateString()}` : ""}
               </div>
               <div className="flex items-center gap-2">
                 {/* Mobile-only Filters trigger */}
