@@ -43,6 +43,42 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* App-like feel: kill the gray tap-flash on iOS, stop overscroll
+     rubber-banding inside the body, disable browser-level "select"
+     glow on UI chrome (text content stays selectable below). */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+/* Prevent iOS Safari from auto-zooming when the user focuses any input
+   — iOS does this whenever the input's computed font-size is < 16px.
+   Force 16px on all form controls site-wide so focus stays put.
+   (The visual size still feels right because we only bump the rendered
+   font; line-height and padding stay component-driven.) */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* Remove the double-tap delay + zoom on interactive elements so taps
+   feel instant on mobile — same trick native apps use. */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Leaflet's tile/control panes default to z-index 400-700 which would
+   sit ON TOP of our fixed bottom nav (z-50) and any modals. Scope the
+   container so the map can never escape its own card. */
+.leaflet-container {
+  z-index: 0 !important;
+}
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: auto !important;
 }
 
 /* ---------- Reusable component classes ---------- */

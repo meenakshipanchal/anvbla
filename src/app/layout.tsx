@@ -43,6 +43,12 @@ export const viewport: Viewport = {
   themeColor: "#054752",
   width: "device-width",
   initialScale: 1,
+  // Lock the zoom factor — gives the app-like feel users expect from a PWA
+  // (no accidental pinch-zoom, no auto-zoom-on-focus when paired with the
+  // 16px-input rule in globals.css). iOS still respects assistive zoom
+  // requested via OS Settings, so accessibility isn't blocked.
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
