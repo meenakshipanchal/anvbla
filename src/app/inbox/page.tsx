@@ -8,7 +8,24 @@ export const metadata = { title: "Inbox" };
 
 export default async function InboxPage() {
   const user = await getCurrentUser();
-  const threads = user ? await listThreadsForUser(user.uid) : [];
+  const allThreads = user ? await listThreadsForUser(user.uid) : [];
+
+  // Dedupe by the OTHER participant — if you and the same person have chatted
+  // on multiple rides, the inbox should show one entry (the most recent),
+  // not the same face twice. listThreadsForUser already sorts by lastAt desc,
+  // so the first occurrence we keep is the freshest thread.
+  const threads = (() => {
+    const seen = new Set<string>();
+    const out: typeof allThreads = [];
+    for (const t of allThreads) {
+      if (!user) break;
+      const otherId = t.passengerId === user.uid ? t.driverId : t.passengerId;
+      if (seen.has(otherId)) continue;
+      seen.add(otherId);
+      out.push(t);
+    }
+    return out;
+  })();
 
   return (
     <div className="wrap py-12 md:py-16">

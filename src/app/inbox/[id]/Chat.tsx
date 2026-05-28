@@ -78,8 +78,16 @@ export default function Chat({ threadId, meId, initial }: { threadId: string; me
     }).catch(() => {});
   }, [threadId, msgs.length]);
 
+  // First render should JUMP to the latest message (WhatsApp/iMessage style),
+  // not slowly animate up from the top. After that, new incoming/sent messages
+  // can animate smoothly so the user notices them arriving.
+  const didInitialScrollRef = useRef(false);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    endRef.current?.scrollIntoView({
+      behavior: didInitialScrollRef.current ? "smooth" : "auto",
+      block: "end",
+    });
+    didInitialScrollRef.current = true;
   }, [msgs, othersTyping]);
 
   async function send(e: React.FormEvent) {
