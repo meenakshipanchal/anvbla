@@ -267,53 +267,47 @@ export default function PublishForm() {
     }
   }
 
+  // Thinner border (1px instead of 1.5px) — softer than the previous outlined
+  // look. Focus state is the only place colour shows up on inputs.
   const inputCls =
-    "w-full rounded-xl border-[1.5px] border-line bg-white px-4 py-3.5 text-[15px] text-ink outline-none transition focus:border-blue";
+    "w-full rounded-xl border border-line bg-white px-4 py-3.5 text-[15px] text-ink outline-none transition focus:border-blue";
 
   const stepKey = STEPS[step];
   const isLast = step === STEPS.length - 1;
   const progress = ((step + 1) / STEPS.length) * 100;
 
   return (
-    <div className="mx-auto mb-12 max-w-[560px] px-4 pt-6 sm:pt-10">
-      {/* Progress */}
-      <div className="mb-2 flex items-center justify-between text-xs font-semibold text-muted">
-        <span>Step {step + 1} of {STEPS.length}</span>
-        {!isLast && step > 0 && (
-          <button type="button" onClick={goBack} className="font-semibold text-blue hover:underline">
-            ← Back
-          </button>
-        )}
-      </div>
-      <div className="mb-7 h-1.5 w-full overflow-hidden rounded-full bg-bgsoft">
+    <div className="mx-auto mb-12 max-w-[560px] px-4 pt-8 sm:pt-12">
+      {/* Progress — single thin bar, no duplicate "Step X of N" text */}
+      <div className="mb-10 h-1 w-full overflow-hidden rounded-full bg-bgsoft">
         <div
           className="h-full rounded-full bg-blue transition-all duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
 
-      {/* Reuse-last banner — only on the first step so it doesn't get noisy. */}
+      {/* Reuse-last banner — borderless, no tint, only on step 1 */}
       {step === 0 && lastRide && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-bgtint px-4 py-3 text-sm">
-          <span className="min-w-0 truncate">
-            <span className="font-semibold">Republish last ride?</span>{" "}
-            <span className="text-muted">
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="min-w-0 truncate text-muted">
+            Republish{" "}
+            <span className="font-semibold text-ink">
               {lastRide.from} → {lastRide.to}
-            </span>
+            </span>?
           </span>
-          <span className="flex shrink-0 gap-2">
-            <button type="button" onClick={reuseLast} className="rounded-full bg-blue px-3 py-1.5 font-semibold text-white">
-              Use
+          <span className="flex shrink-0 gap-3">
+            <button type="button" onClick={reuseLast} className="font-semibold text-blue hover:underline">
+              Use it
             </button>
-            <button type="button" onClick={() => setLastRide(null)} className="px-2 py-1 font-semibold text-muted">
+            <button type="button" onClick={() => setLastRide(null)} className="font-semibold text-muted hover:underline">
               New
             </button>
           </span>
         </div>
       )}
 
-      {/* Step content */}
-      <div className="rounded-2xl bg-white p-5 shadow-[var(--shadow-md)] sm:p-7">
+      {/* Step content — no card border or shadow; the screen IS the card */}
+      <div>
         {stepKey === "from" && (
           <Screen
             title="Where are you leaving from?"
@@ -408,9 +402,9 @@ export default function PublishForm() {
                       type="button"
                       key={n}
                       onClick={() => setSeats(String(n))}
-                      className={`min-w-12 rounded-full border-[1.5px] px-4 py-2 font-semibold transition ${
+                      className={`min-w-12 rounded-full border px-4 py-2 font-semibold transition ${
                         seats === String(n)
-                          ? "border-blue bg-blue text-white"
+                          ? "border-blue text-blue"
                           : "border-line text-ink hover:border-sky"
                       }`}
                     >
@@ -446,8 +440,8 @@ export default function PublishForm() {
                   type="button"
                   key={val}
                   onClick={() => setVehicle(val)}
-                  className={`flex flex-col items-center gap-2 rounded-2xl border-[1.5px] px-3 py-6 transition ${
-                    vehicle === val ? "border-blue bg-bgtint text-blue" : "border-line"
+                  className={`flex flex-col items-center gap-3 rounded-2xl border px-3 py-7 transition ${
+                    vehicle === val ? "border-blue text-blue" : "border-line"
                   }`}
                 >
                   <Icon width={32} height={32} />
@@ -530,10 +524,8 @@ export default function PublishForm() {
                   type="button"
                   key={key}
                   onClick={() => toggle(key)}
-                  className={`flex items-center justify-between gap-2 rounded-xl border-[1.5px] px-4 py-3 text-left text-[15px] transition ${
-                    amenities[key]
-                      ? "border-blue bg-bgtint text-blue"
-                      : "border-line"
+                  className={`flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left text-[15px] transition ${
+                    amenities[key] ? "border-blue text-blue" : "border-line"
                   }`}
                 >
                   <span>{label}</span>

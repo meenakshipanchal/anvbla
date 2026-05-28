@@ -1,11 +1,9 @@
 import Link from "next/link";
 import SearchCard from "@/components/SearchCard";
-import { Seat } from "@/components/Icons";
 
-/* Homepage — pared down to the single thing a visitor cares about:
-   finding a ride. Hero + search bar at the top, three tight steps
-   below, one CTA to publish. Everything else (testimonials, FAQ,
-   driver pitch) lives on dedicated pages so / doesn't feel cluttered. */
+/* Homepage — single goal: find a ride. Hero with search on top, then three
+   tight steps and one driver CTA. No marketing chrome (eyebrows, value-prop
+   grid, testimonial, FAQ) so the page reads as "type, search, done." */
 
 const STEPS = [
   { n: "1", t: "Search", d: "Pick where you're going and when." },
@@ -16,16 +14,15 @@ const STEPS = [
 export default function Home() {
   return (
     <>
-      {/* Hero */}
-      <section className="relative flex min-h-[58vh] flex-col justify-center overflow-hidden pb-12 pt-10 text-white md:min-h-[72vh] md:pb-24 md:pt-16">
+      {/* Hero — smaller, lighter teal scrim so the page doesn't feel dark */}
+      <section className="relative flex min-h-[52vh] flex-col justify-center overflow-hidden pb-14 pt-12 text-white md:min-h-[60vh] md:pb-20 md:pt-16">
         <div className="pointer-events-none absolute inset-0 bg-[url('/hero-bg.png')] bg-cover bg-center" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(105deg,rgba(4,47,58,.94)_0%,rgba(5,71,82,.66)_42%,rgba(5,71,82,.22)_72%,rgba(5,71,82,.05)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(105deg,rgba(4,47,58,.88)_0%,rgba(5,71,82,.48)_55%,rgba(5,71,82,.12)_100%)]" />
         <div className="wrap relative z-10">
-          <span className="eyebrow text-green">Carpooling in India</span>
-          <h1 className="mt-3 max-w-[720px] font-bold tracking-tight">
+          <h1 className="max-w-[640px] font-bold tracking-tight">
             Find a ride at <span className="text-green">low prices</span>
           </h1>
-          <p className="mt-4 max-w-[520px] text-[#d6eef2]">
+          <p className="mt-3 max-w-[480px] text-[#d6eef2]">
             Share the journey, split the cost.
           </p>
           <div className="mt-8">
@@ -34,19 +31,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* How it works — minimal, three short steps */}
-      <section className="py-14 md:py-20">
+      {/* How it works — borderless, just text + a quiet number */}
+      <section className="py-16 md:py-24">
         <div className="wrap">
-          <div className="mx-auto mb-10 max-w-[560px] text-center">
-            <h2 className="font-bold tracking-tight">How it works</h2>
-          </div>
-          <div className="grid gap-6 sm:grid-cols-3">
+          <h2 className="mb-12 text-center font-bold tracking-tight">How it works</h2>
+          <div className="mx-auto grid max-w-3xl gap-10 sm:grid-cols-3 sm:gap-8">
             {STEPS.map((s) => (
-              <div key={s.n} className="rounded-2xl border border-line bg-white p-7 text-center">
-                <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-sky-soft font-bold text-blue">
+              <div key={s.n} className="text-center">
+                <div className="mx-auto mb-4 grid h-10 w-10 place-items-center rounded-full bg-bgsoft font-semibold text-blue">
                   {s.n}
                 </div>
-                <h3 className="mb-2 font-semibold">{s.t}</h3>
+                <h3 className="mb-1.5 font-semibold">{s.t}</h3>
                 <p className="text-muted">{s.d}</p>
               </div>
             ))}
@@ -54,16 +49,16 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Driver CTA — single, prominent */}
-      <section className="bg-bgtint py-14 md:py-20">
-        <div className="wrap mx-auto max-w-[640px] text-center">
+      {/* Driver CTA — quiet section divider, no tinted background */}
+      <section className="border-t border-line py-16 md:py-24">
+        <div className="wrap mx-auto max-w-[560px] text-center">
           <h2 className="font-bold tracking-tight">Driving somewhere?</h2>
           <p className="mt-3 text-muted">
             Publish your trip and let passengers chip in for fuel and tolls.
           </p>
-          <div className="mt-7">
+          <div className="mt-8">
             <Link href="/publish" className="btn btn-primary btn-lg">
-              <Seat /> Publish a ride
+              Publish a ride
             </Link>
           </div>
         </div>
