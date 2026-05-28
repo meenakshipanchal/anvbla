@@ -205,7 +205,30 @@ export default function SearchCard(props: Props) {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const params = new URLSearchParams({ from: from.trim(), to: to.trim(), date, seats });
+    const f = from.trim();
+    const t = to.trim();
+    const params = new URLSearchParams({ from: f, to: t, date, seats });
+    // Save to the local "recent searches" list so the homepage can show it as
+    // a one-tap shortcut next time. We dedupe on from+to (case-insensitive) and
+    // cap the list at 6 — older entries roll off when the user does new
+    // searches. Local-only by design; this is a per-browser convenience, not
+    // a synced server-side history.
+    if (f && t && typeof window !== "undefined") {
+      try {
+        const KEY = "bb-recent-searches";
+        type Recent = { from: string; to: string; date: string; seats: string; ts: number };
+        const raw = localStorage.getItem(KEY);
+        const list: Recent[] = raw ? JSON.parse(raw) : [];
+        const key = `${f.toLowerCase()}|${t.toLowerCase()}`;
+        const next: Recent[] = [
+          { from: f, to: t, date, seats, ts: Date.now() },
+          ...list.filter((r) => `${r.from.toLowerCase()}|${r.to.toLowerCase()}` !== key),
+        ].slice(0, 6);
+        localStorage.setItem(KEY, JSON.stringify(next));
+      } catch {
+        /* ignore quota / parse errors — UX is unaffected */
+      }
+    }
     router.push(`/search?${params.toString()}`);
   }
 
