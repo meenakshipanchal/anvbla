@@ -32,7 +32,7 @@
 }
 html {
   scroll-behavior: smooth;
-  font-size: 15px; /* slightly smaller, denser UI scale */
+  font-size: 16px; /* default browser base, lets rem-based UI scale naturally */
 }
 body {
   background: #fff;
@@ -54,11 +54,10 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.55rem;
     font-weight: 600;
-    font-size: 0.95rem;
     border-radius: 999px;
-    padding: 0.75rem 1.4rem;
+    padding: 0.95rem 1.7rem;
     transition: transform 0.08s ease, background 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
     white-space: nowrap;
     cursor: pointer;
@@ -97,15 +96,13 @@ body {
     color: var(--color-blue);
   }
   .btn-lg {
-    padding: 0.95rem 1.9rem;
-    font-size: 1rem;
+    padding: 1.15rem 2.2rem;
   }
 
   .eyebrow {
     display: inline-block;
     font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-blue);
   }
@@ -113,7 +110,7 @@ body {
   .card {
     background: #fff;
     border: 1px solid var(--color-line);
-    border-radius: 14px;
+    border-radius: 18px;
     box-shadow: var(--shadow-card);
   }
   .field-input {
@@ -174,33 +171,43 @@ body {
 }
 
 /* ──────────────────────────────────────────────────────────────
-   Uniform typography — ONE font size across the entire UI.
-   Every element renders at the same size; visual hierarchy comes
-   from font-weight and colour only (no size variation anywhere).
+   Typography — readable defaults with a clear hierarchy. Previous
+   build clamped everything to 12px to look "compact" but users
+   reported it as too small + cluttered. Step everything up.
    ────────────────────────────────────────────────────────────── */
 * {
-  font-size: 12px !important;
-  line-height: 1.4 !important;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
 }
 
-/* Headings keep a clear, larger hierarchy (descendants targeted too, so
-   inline spans inside a heading don't fall back to the 12px body size). */
 h1, h1 * {
-  font-size: 20px !important;
-  line-height: 1.2 !important;
+  font-size: 34px !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.01em;
+}
+@media (min-width: 768px) {
+  h1, h1 * {
+    font-size: 48px !important;
+  }
 }
 h2, h2 * {
-  font-size: 16px !important;
+  font-size: 24px !important;
   line-height: 1.25 !important;
+  letter-spacing: -0.005em;
+}
+@media (min-width: 768px) {
+  h2, h2 * {
+    font-size: 30px !important;
+  }
 }
 h3, h3 * {
-  font-size: 14px !important;
-  line-height: 1.3 !important;
+  font-size: 18px !important;
+  line-height: 1.35 !important;
 }
 
-/* Bottom-nav labels: a touch smaller than body text for a cleaner look. */
+/* Bottom-nav labels: small + tight so the bar stays compact on mobile. */
 .nav-label {
-  font-size: 10px !important;
+  font-size: 12px !important;
   letter-spacing: 0.02em;
   line-height: 1 !important;
 }
