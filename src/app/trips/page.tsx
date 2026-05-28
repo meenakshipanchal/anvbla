@@ -8,6 +8,8 @@ import { listBookingsByUser, listBookingsForDriver, type Booking } from "@/lib/b
 import { rupees } from "@/lib/data";
 
 export const metadata = { title: "Your trips" };
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function BookingRow({ b, variant }: { b: Booking; variant: "confirmed" | "pending" | "declined" }) {
   // Confirmed bookings get a "Message driver" CTA inline; the thread id is the
@@ -76,7 +78,14 @@ export default async function TripsPage() {
       ])
     : [[], [], []];
 
-  const requests = driverBookings.filter((b) => b.status === "pending");
+  // Drop phantom "pending" requests whose underlying ride no longer exists
+  // — they slip through if a passenger books in the race-gap between
+  // deleteRide reading bookings and committing the batch. No live ride →
+  // nothing for the driver to act on.
+  const liveRideIds = new Set(published.map((r) => r.id));
+  const requests = driverBookings.filter(
+    (b) => b.status === "pending" && liveRideIds.has(b.rideId)
+  );
   const upcoming = myBookings.filter((b) => b.status === "confirmed");
   const pending = myBookings.filter((b) => b.status === "pending");
   const declined = myBookings.filter((b) => b.status === "declined");

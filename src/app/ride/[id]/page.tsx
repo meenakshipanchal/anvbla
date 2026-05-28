@@ -2,6 +2,11 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { avatarColor, initials } from "@/lib/data";
 import { getRideById } from "@/lib/rides";
+
+// A passenger MUST NOT be able to book a ride from a cached page after the
+// driver has deleted it. Always read live Firestore for this route.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import { getCurrentUser } from "@/lib/session";
 import { listBookingsByUser, listBookingsForRide } from "@/lib/bookings";
 import { listReviewsForDriver, driverRating, hasReviewed } from "@/lib/reviews";

@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import { createRide, deleteRide, markRideCompleted } from "@/lib/rides";
 import { geocode } from "@/lib/geo";
 import { sendPush } from "@/lib/push";
+
+// Bust every cache that lists or shows a ride. Called from each mutation so a
+// deleted/completed/new ride disappears from /search and /ride/[id] instantly
+// — otherwise Next's Router Cache will keep serving the stale RSC payload and a
+// passenger can book a ride that no longer exists.
+function revalidateRideViews(rideId?: string) {
+  revalidatePath("/search");
+  revalidatePath("/trips");
+  if (rideId) revalidatePath(`/ride/${rideId}`);
+}
 
 // Trip duration from the driver's own departure + arrival (ETA) times.
 function durationBetween(dep: string, arr: string): string {
@@ -87,6 +98,7 @@ export async function POST(req: NextRequest) {
       toLng: toGeo?.lng ?? null,
       completed: false,
     });
+    revalidateRideViews(id);
     return NextResponse.json({ id });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
@@ -105,6 +117,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     await markRideCompleted(user.uid, String(rideId));
+    revalidateRideViews(String(rideId));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
@@ -122,6 +135,9 @@ export async function DELETE(req: NextRequest) {
 
   try {
     const affected = await deleteRide(user.uid, String(rideId));
+    // Bust the caches BEFORE returning so the driver's next /search render
+    // doesn't see the just-deleted ride from the Router Cache.
+    revalidateRideViews(String(rideId));
     for (const p of affected) {
       void sendPush(p.passengerId, {
         title: "Ride cancelled",

@@ -2,6 +2,10 @@ import SearchResults from "./SearchResults";
 import { listRides } from "@/lib/rides";
 
 export const metadata = { title: "Search rides" };
+// Search must read live Firestore on every request — a deleted/booked ride
+// has to disappear immediately. Never cache.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function SearchPage({
   searchParams,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import { createBooking, respondToBooking, countPendingRequestsForDriver } from "@/lib/bookings";
 import { sendPush } from "@/lib/push";
@@ -20,6 +21,12 @@ export async function POST(req: NextRequest) {
       seats: qty,
       paymentMethod: method,
     });
+    // Bust /trips (so the driver's badge + requests panel update on next render)
+    // and /ride/[id] (seat count may have changed on accept). /search lists the
+    // same seat count so revalidate it too.
+    revalidatePath("/trips");
+    revalidatePath("/search");
+    revalidatePath(`/ride/${rideId}`);
     // Notify the driver (best-effort; failure must not affect the booking).
     void sendPush(String(driverId), {
       title: "New ride request",
@@ -50,6 +57,9 @@ export async function PATCH(req: NextRequest) {
       action,
       typeof reason === "string" ? reason : undefined
     );
+    revalidatePath("/trips");
+    revalidatePath("/search");
+    revalidatePath(`/ride/${result.rideId}`);
     // Notify the passenger about the driver's decision.
     const route = `${result.from} → ${result.to}`;
     void sendPush(result.passengerId, {
