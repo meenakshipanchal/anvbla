@@ -32,31 +32,44 @@ function formatJoined(ms: number | null): string {
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-export default function AccountView() {
+export default function AccountView({
+  // Server-prefetched values from the page wrapper. Used as initial state so
+  // the bio and joined chip paint on the first frame — no useEffect roundtrip,
+  // no skeleton, no flash of empty state.
+  initialBio = "",
+  initialJoinedAt = null,
+}: {
+  initialBio?: string;
+  initialJoinedAt?: number | null;
+} = {}) {
   const { user, ready } = useAuthUser();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>({ bio: initialBio, joinedAt: initialJoinedAt });
   const [editing, setEditing] = useState(false);
-  const [draftBio, setDraftBio] = useState("");
+  const [draftBio, setDraftBio] = useState(initialBio);
   const [saving, setSaving] = useState(false);
 
-  // Pull the server-side profile (bio + joinedAt) once we know there's a user.
-  // Bio lives in Firestore; joinedAt comes from Firebase Auth metadata.
+  // Background refresh — the page wrapper already prefetched bio + joinedAt
+  // server-side, so we already have something to render. This call just
+  // catches any update made elsewhere (other tab, recent save) and keeps
+  // the view consistent without ever blocking the paint.
   useEffect(() => {
     if (!user) return;
     let alive = true;
-    // cache: 'no-store' so the browser HTTP cache never serves a stale
-    // pre-save snapshot of the bio after the user comes back from a refresh.
     fetch("/api/profile", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { profile: null }))
       .then((d: { profile: Profile | null }) => {
-        if (!alive) return;
-        setProfile(d.profile);
-        setDraftBio(d.profile?.bio ?? "");
+        if (!alive || !d.profile) return;
+        setProfile({ bio: d.profile.bio, joinedAt: d.profile.joinedAt });
+        // Don't clobber a bio the user is currently editing.
+        if (!editing) setDraftBio(d.profile.bio ?? "");
       })
       .catch(() => {});
     return () => {
       alive = false;
     };
+    // editing is intentionally NOT a dep — we only want this to refire on
+    // user changes, not every time the draft toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   async function saveBio() {
