@@ -34,10 +34,10 @@ declare global {
   }
 }
 
-const GSI_SRC = "https://accounts.google.com/gsi/client";
 // Web OAuth client ID — same project as Firebase, exposed via env so One Tap
 // can mint a credential the Firebase SDK can exchange. If unset, One Tap is
 // disabled and the user falls back to the "Continue with Google" button.
+// The GSI script itself is loaded from the root layout.
 const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 /* BlaBlue auth — Google sign-in via Firebase.
@@ -97,21 +97,26 @@ export default function CustomAuth() {
     if (user) router.replace(next || "/trips");
   }, [user, next, router]);
 
-  // Google One Tap — opportunistic, near-zero-friction sign-in. Loads the GSI
-  // script on demand, shows the prompt, and exchanges the returned credential
-  // for a Firebase session. Skips silently if not configured or already signed
-  // in. The "Continue with Google" button stays available as a fallback (One
-  // Tap is rate-limited and won't appear on every visit).
+  // Google One Tap — opportunistic, near-zero-friction sign-in. The GSI script
+  // is loaded once at app boot from the root layout, so by the time this
+  // effect runs window.google is usually already there and the prompt shows
+  // with no extra network wait. Skips silently if not configured or already
+  // signed in. The button below stays as a fallback.
   useEffect(() => {
     if (!ONE_TAP_CLIENT_ID || !firebaseAuth || user) return;
 
     let cancelled = false;
+    let pollId: number | null = null;
+
     const init = () => {
       if (cancelled || !window.google?.accounts?.id || !firebaseAuth) return;
       window.google.accounts.id.initialize({
         client_id: ONE_TAP_CLIENT_ID,
         use_fedcm_for_prompt: true,
         cancel_on_tap_outside: false,
+        // Returning users with a single Google session get signed in WITHOUT
+        // a tap — fastest possible path. New users still see the chooser.
+        auto_select: true,
         itp_support: true,
         callback: async (response) => {
           if (!firebaseAuth) return;
@@ -132,21 +137,23 @@ export default function CustomAuth() {
       window.google.accounts.id.prompt();
     };
 
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SRC}"]`);
-    if (existing) {
-      if (window.google?.accounts?.id) init();
-      else existing.addEventListener("load", init);
+    // The <Script> in layout.tsx usually has GSI ready by now. If we're early,
+    // poll briefly until it lands rather than racing the load event (more
+    // reliable than addEventListener('load') when the script is already done).
+    if (window.google?.accounts?.id) {
+      init();
     } else {
-      const script = document.createElement("script");
-      script.src = GSI_SRC;
-      script.async = true;
-      script.defer = true;
-      script.onload = init;
-      document.head.appendChild(script);
+      pollId = window.setInterval(() => {
+        if (window.google?.accounts?.id) {
+          if (pollId !== null) window.clearInterval(pollId);
+          init();
+        }
+      }, 50);
     }
 
     return () => {
       cancelled = true;
+      if (pollId !== null) window.clearInterval(pollId);
       try {
         window.google?.accounts?.id?.cancel();
       } catch {

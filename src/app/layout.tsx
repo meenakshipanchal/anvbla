@@ -1,8 +1,15 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import FirebaseProvider from "@/components/FirebaseProvider";
+
+// Google Identity Services (One Tap). Loaded once at app boot via <Script>
+// so it's parsed in parallel with the page hydration — by the time
+// CustomAuth's effect fires, window.google is already there and the prompt
+// can show instantly instead of waiting on a fresh script download.
+const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -41,10 +48,26 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   // Auth is entirely Firebase (Google) — no Clerk provider needed.
   return (
     <html lang="en" className={`${poppins.variable} h-full antialiased`}>
+      <head>
+        {/* Warm the TLS + DNS connection to Google Identity Services before
+            any script needs it — shaves a few hundred ms off One Tap. */}
+        {ONE_TAP_CLIENT_ID && (
+          <>
+            <link rel="preconnect" href="https://accounts.google.com" />
+            <link rel="dns-prefetch" href="https://accounts.google.com" />
+          </>
+        )}
+      </head>
       <body className="flex min-h-full flex-col">
         <FirebaseProvider>
           <AppShell>{children}</AppShell>
         </FirebaseProvider>
+        {ONE_TAP_CLIENT_ID && (
+          <Script
+            src="https://accounts.google.com/gsi/client"
+            strategy="afterInteractive"
+          />
+        )}
       </body>
     </html>
   );
