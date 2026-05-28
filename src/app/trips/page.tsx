@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Ticket, Search, Seat } from "@/components/Icons";
 import RideRequests from "./RideRequests";
 import PublishedRideRow from "./PublishedRideRow";
+import WithdrawButton from "./WithdrawButton";
 import { getCurrentUser } from "@/lib/session";
 import { listRidesByDriver } from "@/lib/rides";
 import { listBookingsByUser, listBookingsForDriver, type Booking } from "@/lib/bookings";
@@ -52,6 +53,9 @@ function BookingRow({ b, variant }: { b: Booking; variant: "confirmed" | "pendin
           Chat with {b.driver.split(" ")[0]}
         </Link>
       )}
+      {/* Withdraw is allowed only while the driver hasn't responded yet.
+          Once confirmed, the passenger loses this escape hatch by design. */}
+      {variant === "pending" && <WithdrawButton bookingId={b.id} />}
       {variant === "declined" && (
         <div className="mt-3 rounded-xl bg-[#fdecea] px-3 py-2 text-[#c0392b]">
           <div className="nav-label mb-0.5 font-semibold">DRIVER DECLINED YOUR REQUEST</div>

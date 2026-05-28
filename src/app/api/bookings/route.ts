@@ -5,6 +5,7 @@ import {
   createBooking,
   respondToBooking,
   countPendingRequestsForDriver,
+  withdrawBooking,
   SameDayConflictError,
 } from "@/lib/bookings";
 import { RIDES_TAG } from "@/lib/rides";
@@ -65,14 +66,41 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/* Driver accepts or declines a pending request. */
+/* PATCH handles three flows on the same booking:
+   - driver accepts a pending request    (action: "accept")
+   - driver declines a pending request   (action: "decline")
+   - passenger withdraws their own       (action: "withdraw")
+   Each path verifies ownership inside the lib function. */
 export async function PATCH(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
   const { bookingId, action, reason } = await req.json().catch(() => ({}));
-  if (!bookingId || (action !== "accept" && action !== "decline")) {
+  if (!bookingId || (action !== "accept" && action !== "decline" && action !== "withdraw")) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  }
+
+  if (action === "withdraw") {
+    try {
+      const result = await withdrawBooking(user.uid, String(bookingId));
+      revalidateTag(RIDES_TAG, "max");
+      revalidateTag(`ride:${result.rideId}`, "max");
+      revalidatePath("/trips");
+      revalidatePath("/search");
+      revalidatePath(`/ride/${result.rideId}`);
+      // Tell the driver the seat is back up. Best-effort; never block.
+      if (result.driverId) {
+        void sendPush(result.driverId, {
+          title: "Request withdrawn",
+          body: `${user.name} cancelled their request for ${result.from} → ${result.to}.`,
+          url: `/ride/${result.rideId}`,
+          tag: `booking-${bookingId}`,
+        });
+      }
+      return NextResponse.json({ status: "withdrawn" });
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    }
   }
 
   try {

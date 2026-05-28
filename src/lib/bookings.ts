@@ -329,3 +329,52 @@ export async function respondToBooking(
     return { ...result, status: "confirmed" as BookingStatus };
   });
 }
+
+/* Passenger withdraws their own booking request. Allowed ONLY while pending —
+   once the driver has confirmed, the seat is theirs and the cancellation
+   path is the driver's decline (or, in future, a passenger-initiated
+   cancellation that may incur a fee). Idempotent enough: a not-pending
+   booking simply errors out, never silently mutates.
+
+   Deleting the booking doc outright is simpler than flipping status to
+   "withdrawn" — it disappears from /trips cleanly, doesn't clutter the
+   declined list, and the open chat thread with the driver stays so they
+   can still message if needed. */
+export type WithdrawResult = {
+  driverId: string;
+  driverName: string;
+  from: string;
+  to: string;
+  rideId: string;
+};
+export async function withdrawBooking(passengerUid: string, bookingId: string): Promise<WithdrawResult> {
+  if (!adminDb) throw new Error("Firestore is not configured.");
+  const db = adminDb;
+
+  const found = (await db.collectionGroup(BOOKED).get()).docs.find((d) => d.id === bookingId);
+  if (!found) throw new Error("Request not found.");
+  const bookingRef = found.ref;
+
+  return db.runTransaction(async (tx) => {
+    const bSnap = await tx.get(bookingRef);
+    if (!bSnap.exists) throw new Error("Request not found.");
+    const b = bSnap.data()!;
+    if (b.userId !== passengerUid) throw new Error("This isn’t your request to withdraw.");
+    if (b.status !== "pending") {
+      throw new Error(
+        b.status === "confirmed"
+          ? "This booking is already confirmed — you can’t withdraw it now."
+          : "This request has already been handled."
+      );
+    }
+    const result: WithdrawResult = {
+      driverId: (b.driverId as string) || "",
+      driverName: (b.driver as string) || "",
+      from: (b.from as string) || "",
+      to: (b.to as string) || "",
+      rideId: (b.rideId as string) || "",
+    };
+    tx.delete(bookingRef);
+    return result;
+  });
+}
