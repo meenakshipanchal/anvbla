@@ -55,15 +55,17 @@ sudo certbot certonly --webroot -w /var/www/html -d "$HOST" \
 # ── STAGE 3: swap in the full HTTPS + hardening config ────────────────────
 echo "▶ Stage 3: installing full HTTPS config (HTTP/2, HSTS, rate limits, headers)..."
 sudo cp "$SCRIPT_DIR/nginx.conf" /etc/nginx/sites-available/anvbla
-sudo sed -i "s/YOUR_DOMAIN/$HOST/g" /etc/nginx/sites-available/anvbla
 
-# Wire the real cert paths into the config. The placeholders are commented
-# out in the file we ship; this uncomments them and points them at the live
-# Let's Encrypt directory we just populated.
+# IMPORTANT: uncomment the cert directives BEFORE the YOUR_DOMAIN -> $HOST
+# rewrite. Otherwise the comment-stripping pattern still references
+# YOUR_DOMAIN but the file already has the real hostname, so the sed becomes
+# a no-op and nginx refuses to start with "no ssl_certificate is defined".
 sudo sed -i \
-  -e "s|# ssl_certificate     /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;|ssl_certificate /etc/letsencrypt/live/$HOST/fullchain.pem;|" \
-  -e "s|# ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;|ssl_certificate_key /etc/letsencrypt/live/$HOST/privkey.pem;|" \
+  -e "s|^\s*# ssl_certificate     |    ssl_certificate     |" \
+  -e "s|^\s*# ssl_certificate_key |    ssl_certificate_key |" \
   /etc/nginx/sites-available/anvbla
+
+sudo sed -i "s/YOUR_DOMAIN/$HOST/g" /etc/nginx/sites-available/anvbla
 
 sudo nginx -t
 sudo systemctl reload nginx
