@@ -2,10 +2,43 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithPopup, signInWithRedirect } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth";
 import { firebaseAuth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import { useFirebaseUser } from "./FirebaseProvider";
 import { Logo } from "./Icons";
+
+// Google Identity Services — loaded on demand for the One Tap prompt. Typed
+// inline so we don't need an extra @types package.
+type GsiCredentialResponse = { credential: string };
+type GsiId = {
+  initialize: (config: {
+    client_id: string;
+    callback: (response: GsiCredentialResponse) => void;
+    auto_select?: boolean;
+    cancel_on_tap_outside?: boolean;
+    use_fedcm_for_prompt?: boolean;
+    itp_support?: boolean;
+  }) => void;
+  prompt: () => void;
+  cancel: () => void;
+  disableAutoSelect: () => void;
+};
+declare global {
+  interface Window {
+    google?: { accounts: { id: GsiId } };
+  }
+}
+
+const GSI_SRC = "https://accounts.google.com/gsi/client";
+// Web OAuth client ID — same project as Firebase, exposed via env so One Tap
+// can mint a credential the Firebase SDK can exchange. If unset, One Tap is
+// disabled and the user falls back to the "Continue with Google" button.
+const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 /* BlaBlue auth — Google sign-in via Firebase.
    NOTE: the Clerk email-OTP flow is disabled for now. Email verification will
@@ -63,6 +96,64 @@ export default function CustomAuth() {
   useEffect(() => {
     if (user) router.replace(next || "/trips");
   }, [user, next, router]);
+
+  // Google One Tap — opportunistic, near-zero-friction sign-in. Loads the GSI
+  // script on demand, shows the prompt, and exchanges the returned credential
+  // for a Firebase session. Skips silently if not configured or already signed
+  // in. The "Continue with Google" button stays available as a fallback (One
+  // Tap is rate-limited and won't appear on every visit).
+  useEffect(() => {
+    if (!ONE_TAP_CLIENT_ID || !firebaseAuth || user) return;
+
+    let cancelled = false;
+    const init = () => {
+      if (cancelled || !window.google?.accounts?.id || !firebaseAuth) return;
+      window.google.accounts.id.initialize({
+        client_id: ONE_TAP_CLIENT_ID,
+        use_fedcm_for_prompt: true,
+        cancel_on_tap_outside: false,
+        itp_support: true,
+        callback: async (response) => {
+          if (!firebaseAuth) return;
+          setError("");
+          setSigningIn(true);
+          try {
+            const cred = GoogleAuthProvider.credential(response.credential);
+            await signInWithCredential(firebaseAuth, cred);
+            // FirebaseProvider's onIdTokenChanged sets the session cookie and
+            // surfaces `user`; the useEffect above then navigates.
+          } catch (err) {
+            const msg = firebaseError(err);
+            if (msg) setError(msg);
+            setSigningIn(false);
+          }
+        },
+      });
+      window.google.accounts.id.prompt();
+    };
+
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SRC}"]`);
+    if (existing) {
+      if (window.google?.accounts?.id) init();
+      else existing.addEventListener("load", init);
+    } else {
+      const script = document.createElement("script");
+      script.src = GSI_SRC;
+      script.async = true;
+      script.defer = true;
+      script.onload = init;
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+      try {
+        window.google?.accounts?.id?.cancel();
+      } catch {
+        /* prompt may already be gone */
+      }
+    };
+  }, [user]);
 
   async function handleGoogle() {
     setError("");
