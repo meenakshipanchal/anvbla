@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { GoogleAuthProvider, signInWithCredential } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
 import { useFirebaseUser } from "./FirebaseProvider";
@@ -40,7 +39,6 @@ declare global {
 const ONE_TAP_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 export default function GoogleOneTap() {
-  const router = useRouter();
   // `ready` flips true once FirebaseProvider's onIdTokenChanged has fired and
   // (if there's a cookie) the server session is established. Firing One Tap
   // before that race finishes makes FedCM reject with NetworkError because
@@ -66,10 +64,21 @@ export default function GoogleOneTap() {
           if (!firebaseAuth) return;
           try {
             const cred = GoogleAuthProvider.credential(response.credential);
-            await signInWithCredential(firebaseAuth, cred);
-            // FirebaseProvider's onIdTokenChanged sets the session cookie;
-            // refresh server components so the navbar swaps Log in → avatar.
-            router.refresh();
+            const result = await signInWithCredential(firebaseAuth, cred);
+            // Drive the session cookie + reload explicitly. Waiting on
+            // FirebaseProvider's onIdTokenChanged here races on mobile — the
+            // browser navigates before the cookie is set and the proxy
+            // bounces the user right back to /sign-in.
+            const idToken = await result.user.getIdToken();
+            await fetch("/api/auth/session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ idToken }),
+              cache: "no-store",
+            });
+            // Hard reload so server components re-render with the new cookie
+            // and any cached pre-auth RSC payload is bypassed.
+            window.location.reload();
           } catch {
             /* Silently ignore — the fallback "Continue with Google" button
                on /sign-in still works. */
@@ -99,7 +108,7 @@ export default function GoogleOneTap() {
         /* prompt may already be gone */
       }
     };
-  }, [user, ready, router]);
+  }, [user, ready]);
 
   return null;
 }

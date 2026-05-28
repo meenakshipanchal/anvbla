@@ -57,12 +57,15 @@ export default function CustomAuth() {
     }
   }, []);
 
-  // Once signed in (via popup OR a returning redirect) AND the server session
-  // cookie is established by FirebaseProvider, go where they intended. The
-  // provider only exposes `user` after the cookie is set, so this is race-free.
+  // Backup navigation path — runs if a returning signInWithRedirect lands
+  // the user back on this page, or if FirebaseProvider's onIdTokenChanged
+  // finishes before handleGoogle's explicit redirect can fire. Hard
+  // navigation (window.location) instead of router.replace so the freshly-set
+  // __session cookie is actually sent — Next's client router cache otherwise
+  // serves a pre-auth RSC payload and the user looks signed-out on /trips.
   useEffect(() => {
-    if (user) router.replace(next || "/trips");
-  }, [user, next, router]);
+    if (user) window.location.href = next || "/trips";
+  }, [user, next]);
 
   // Google One Tap is mounted globally in the root layout (GoogleOneTap.tsx)
   // so it appears on any page when a visitor isn't signed in. Nothing to do
@@ -77,11 +80,34 @@ export default function CustomAuth() {
     }
     setSigningIn(true);
     try {
-      await signInWithPopup(firebaseAuth, googleProvider);
-      // FirebaseProvider's onIdTokenChanged creates the server session cookie
-      // and only exposes `user` AFTER it's set — the useEffect above then
-      // navigates. Leave signingIn=true so the button keeps its loading state
-      // until that redirect fires (avoids the button appearing "frozen").
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
+      // Don't wait for FirebaseProvider's onIdTokenChanged listener to fire —
+      // it races on some mobile browsers and the user ends up stuck on a
+      // spinning sign-in screen even though Google already authenticated
+      // them. Drive the session cookie + redirect explicitly here.
+      const idToken = await result.user.getIdToken();
+      const res = await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+        // Belt-and-braces: never let an HTTP cache serve a stale empty body
+        // for this — the server cookie must actually be set before we move on.
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(
+          data.error ||
+            "Signed in with Google, but the server couldn’t create a session. Please try again."
+        );
+        setSigningIn(false);
+        return;
+      }
+      // Hard navigation (window.location) instead of router.replace so the
+      // browser sends the freshly-set __session cookie on the next request
+      // — Next's client router cache otherwise sometimes serves a pre-auth
+      // RSC payload of /trips and the user lands signed-out-looking.
+      window.location.href = next || "/trips";
     } catch (err) {
       const code = (err as { code?: string }).code;
       // Popup blocked / unsupported → fall back to a full-page redirect sign-in.
