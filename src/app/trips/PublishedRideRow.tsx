@@ -96,10 +96,11 @@ export default function PublishedRideRow({ ride }: { ride: Ride }) {
           {ride.from} → {ride.to}
         </div>
         {/* When this ride was published — lets the driver tell two near-
-            identical rides apart and judge whether to reuse / repost. */}
-        {ride.createdAt && (
-          <div className="mt-1 text-xs text-muted">Published {timeAgo(ride.createdAt)}</div>
-        )}
+            identical rides apart. Older rides written before createdAt was
+            stamped show a generic "earlier" so the line still renders. */}
+        <div className="mt-1 text-xs text-muted">
+          Published {ride.createdAt ? timeAgo(ride.createdAt) : "earlier"}
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-1">
           {ride.instant && (
             <span className="nav-label inline-flex items-center gap-0.5 rounded-full bg-sky-soft px-1.5 py-0.5 font-semibold text-blue">
